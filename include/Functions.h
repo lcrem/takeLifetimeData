@@ -35,6 +35,7 @@
     #include <stdint.h>   /* C99 compliant compilers: uint64_t */
     #include <ctype.h>    /* toupper() */
     #include <sys/time.h>
+#include "stdbool.h"
 #endif
 
 #define HV_MAXCHANNELS      (2) // DT5790 has maximum 2 HV channels
@@ -72,6 +73,7 @@ typedef struct
 *  ########################################################################### */
 
 DAQSettings_t readDAQSettings(char infile[1000]); 
+
 
 /*! \fn      static long get_time()
 *   \brief   Get time in milliseconds

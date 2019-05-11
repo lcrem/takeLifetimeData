@@ -33,6 +33,7 @@
     #include <stdint.h>   /* C99 compliant compilers: uint64_t */
     #include <ctype.h>    /* toupper() */
     #include <sys/time.h>
+#include "stdbool.h"
 #endif
 
 /* ###########################################################################
@@ -43,23 +44,44 @@ DAQSettings_t readDAQSettings(char infile[1000]){
 
   DAQSettings_t set;
 
-   FILE *fp = fopen(infile, "r"); // read mode 
+  FILE *fp = fopen(infile, "r"); // read mode 
 
-   if (fp == NULL) 
-     { 
-       perror("Error while opening the file.\n"); 
-       exit(EXIT_FAILURE); 
-     } 
+  if (fp == NULL) 
+    { 
+      perror("Error while opening the file.\n"); 
+      exit(EXIT_FAILURE); 
+    } 
 
-   printf("The contents of %s file are:\n", infile); 
+  printf("The contents of %s file are:\n", infile); 
 
-   /* /\\* while((ch = fgetc(fp)) != EOF) *\\/  */
-   /* /\\*   printf("%c", ch); *\\/  */
+  char line [ 128 ]; /* or other suitable maximum line size */
+  while ( fgets ( line, sizeof line, fp ) != NULL )  {
+      fputs ( line, stdout ); /* write the line */
+      
+      //Number of waveforms : 1000    
+      //Output folder : /unix/dune/purity/DAQtests/
+      
+      //Trigger threshold : 50             
+      //Baseline averaging samples:  1     
+      //Long gate : 1000                   
+      //Short gate : 24                    
+      //Pre gate :  8                      
+      //Self Trigger Mode : 1              
+      
+      //Trigger validation acq window : 50 
+      //Charge sensibility : 0             
+      
+      //  Purity gap : 100                   
+      // Baseline threshold : 3             
+      // Trigger holdoff : 8                
+      
+  }
 
-   fclose(fp); 
-   return set; 
+  fclose(fp); 
+  return set; 
+   
+} 
 
- } 
 
 
 /*! \fn      static long get_time()

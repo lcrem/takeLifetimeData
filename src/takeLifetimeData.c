@@ -166,8 +166,6 @@ int ProgramDigitizer(int handle, DigitizerParams_t Params, CAEN_DGTZ_DPP_PSD_Par
 int main(int argc, char *argv[])
 {
 
-  DAQSettings_t set;
-
   int MAX_WAVEFORMS=10;
   char outdir[1000];
   char configFile[1000];
@@ -179,12 +177,13 @@ int main(int argc, char *argv[])
   if((argc==1)){ 
     printf("Usage : %s -i (configFile) -o (outdir) -n (MAX_WAVEFORMS) -m (ELOGMESSAGE)\n", argv[0]); 
     printf("All inputs are optional so I'm just going to use my default ones\n");
-    printf("if MAX_WAVEFORMS==-1 do calibration\n"); 
+    printf("if MAX_WAVEFORMS==-1 do calibration\n\n"); 
   }
   
   char clswitch; // command line switch
   int tmpmax=0;
   char tmpout[200];
+  tmpout[0] = 0;
 
   if (argc>1) {
     while ((clswitch = getopt(argc, argv, "i:o:n:m:")) != EOF) {
@@ -209,15 +208,16 @@ int main(int argc, char *argv[])
     } // end while
   } // end if arg>1
 
-
-  // Function to read settings here;
+  // Function that reads the settings 
+  DAQSettings_t set = readDAQSettings(configFile);
 
   if (tmpmax!=0) MAX_WAVEFORMS=tmpmax;
-  if (tmpout!=NULL) sprintf(outdir, "%s", tmpout);
-
-  char makedircmd[1000];
-  sprintf(makedircmd, "mkdir -p %s", outdir);
-  system(makedircmd);
+  if (tmpout[0] != 0)    sprintf(outdir, "%s", tmpout);
+  
+  // Make sure output directory exhists
+  char makedircmd[1000]; 
+  sprintf(makedircmd, "mkdir -p %s", outdir); 
+  system(makedircmd); 
 
 
   printf("Nwavef %i and outdir %s\n", MAX_WAVEFORMS, outdir);
