@@ -166,21 +166,61 @@ int ProgramDigitizer(int handle, DigitizerParams_t Params, CAEN_DGTZ_DPP_PSD_Par
 int main(int argc, char *argv[])
 {
 
-
   DAQSettings_t set;
 
-  int MAX_WAVEFORMS=1000;
+  int MAX_WAVEFORMS=10;
   char outdir[1000];
-  char outprefix[100];
-  if((argc==1)){
-    printf("Usage : %s [outdir] (outprefix) (MAX_WAVEFORMS) \n", argv[0]);
-    printf("if MAX_WAVEFORMS==-1 do calibration\n");
-    return 1;
-  } else {
-    sprintf(outdir,("%s", argv[1])); 
-    if (argc>2) sprintf(outprefix,("%s", argv[2]));
-    if (argc>3) MAX_WAVEFORMS=atoi(argv[3]);
+  char configFile[1000];
+  char elog[10000];
+
+  // Default configuration file
+  sprintf(configFile, "exampleConfig.cfg");
+  sprintf(outdir, "tmpout");
+  if((argc==1)){ 
+    printf("Usage : %s -i (configFile) -o (outdir) -n (MAX_WAVEFORMS) -m (ELOGMESSAGE)\n", argv[0]); 
+    printf("All inputs are optional so I'm just going to use my default ones\n");
+    printf("if MAX_WAVEFORMS==-1 do calibration\n"); 
   }
+  
+  char clswitch; // command line switch
+  int tmpmax=0;
+  char tmpout[200];
+
+  if (argc>1) {
+    while ((clswitch = getopt(argc, argv, "i:o:n:m:")) != EOF) {
+      switch(clswitch) {
+      case 'n':
+        tmpmax=atoi(optarg);
+	printf("Number of waveforms to take: %i\n", tmpmax);
+        break;
+      case 'i':
+        sprintf(configFile, "%s", optarg);
+	printf("Config file: %s\n", configFile);
+        break;
+      case 'o':
+        sprintf(tmpout, "%s", optarg);
+	printf("Output dir: %s\n", tmpout);
+        break;
+      case 'm':
+	sprintf(elog, "%s", optarg);
+	printf("Elog message: %s\n", elog);
+	break;
+      } // end switch
+    } // end while
+  } // end if arg>1
+
+
+  // Function to read settings here;
+
+  if (tmpmax!=0) MAX_WAVEFORMS=tmpmax;
+  if (tmpout!=NULL) sprintf(outdir, "%s", tmpout);
+
+  char makedircmd[1000];
+  sprintf(makedircmd, "mkdir -p %s", outdir);
+  system(makedircmd);
+
+
+  printf("Nwavef %i and outdir %s\n", MAX_WAVEFORMS, outdir);
 
   /* The following variable is the type returned from most of CAENDigitizer
      library functions and is used to check if there was an error in function
@@ -323,6 +363,8 @@ int main(int argc, char *argv[])
     DPPParams[b].blthr = 3;     // Baseline Threshold
     DPPParams[b].trgho = 8;     // Trigger HoldOff
   }
+
+  printf("Stuff happened and I got to the end\n");
 
   goto QuitProgram;    
 
