@@ -262,7 +262,7 @@ int SaveFunWaveform(int b, int ch, int trace, int size, int16_t *WaveData, char 
 	*/
     FILE *fh;
     int i;
-    char filename[20];
+    char filename[180];
 
     sprintf(filename, "%s/Waveform_%d_%d_%d.txt", inName, b, ch, trace);
     fh = fopen(filename, "w");

@@ -476,6 +476,8 @@ int main(int argc, char *argv[])
   printf("%s %i \n", __FUNCTION__, __LINE__);
   for(b=0; b<MAXNB; b++) { 
 
+    CAEN_DGTZ_ClearData(handle[b]); 
+
     // Start Acquisition 
     // NB: the acquisition for each board starts when the following line is executed 
     // so in general the acquisition does NOT starts syncronously for different boards 
