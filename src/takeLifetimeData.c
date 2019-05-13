@@ -210,6 +210,8 @@ int main(int argc, char *argv[])
 
   // Function that reads the settings 
   DAQSettings_t set = readDAQSettings(configFile);
+  MAX_WAVEFORMS=set.nmax;
+  sprintf(outdir, "%s", set.outfolder);
 
   if (tmpmax!=0) MAX_WAVEFORMS=tmpmax;
   if (tmpout[0] != 0)    sprintf(outdir, "%s", tmpout);
@@ -316,21 +318,21 @@ int main(int argc, char *argv[])
      *      DPP parameters        *
         \****************************/
     for(ch=0; ch<MaxNChannels; ch++) {
-      DPPParams[b].thr[ch] = 50;        // Trigger Threshold
+      DPPParams[b].thr[ch] = set.thr;        // Trigger Threshold
       /* The following parameter is used to specifiy the number of samples for the baseline averaging:
 	 0 -> absolute Bl
 	 1 -> 16samp
 	 2 -> 64samp
 	 3 -> 256samp
 	 4 -> 1024samp */
-      DPPParams[b].nsbl[ch]  = 1;
-      DPPParams[b].lgate[ch] = 1000;    // Long Gate Width (N*2ns for x730  and N*4ns for x725)
-      DPPParams[b].sgate[ch] = 24;    // Short Gate Width (N*2ns for x730  and N*4ns for x725)
-      DPPParams[b].pgate[ch] = 8;     // Pre Gate Width (N*2ns for x730  and N*4ns for x725) 
+      DPPParams[b].nsbl[ch]  = set.nsbl;
+      DPPParams[b].lgate[ch] = set.lgate;    // Long Gate Width (N*2ns for x730  and N*4ns for x725)
+      DPPParams[b].sgate[ch] = set.sgate;    // Short Gate Width (N*2ns for x730  and N*4ns for x725)
+      DPPParams[b].pgate[ch] = set.pgate;     // Pre Gate Width (N*2ns for x730  and N*4ns for x725) 
       /* Self Trigger Mode:
 	 0 -> Disabled
 	 1 -> Enabled */
-      DPPParams[b].selft[ch] = 1;
+      DPPParams[b].selft[ch] = set.selft;
       // Trigger configuration:
       //    CAEN_DGTZ_DPP_TriggerMode_Normal ->  Each channel can self-trigger independently from the other channels
       //    CAEN_DGTZ_DPP_TriggerMode_Coincidence -> A validation signal must occur inside the shaped trigger coincidence window
@@ -348,20 +350,20 @@ int main(int argc, char *argv[])
       DPPParams[b].cfdf[ch] = 0;
 
       /* Trigger Validation Acquisition Window */
-      DPPParams[b].tvaw[ch] = 50;
+      DPPParams[b].tvaw[ch] = set.tvaw;
 
       /* Charge sensibility: 
 	 Options for Input Range 2Vpp: 0->5fC/LSB; 1->20fC/LSB; 2->80fC/LSB; 3->320fC/LSB; 4->1.28pC/LSB; 5->5.12pC/LSB 
 	 Options for Input Range 0.5Vpp: 0->1.25fC/LSB; 1->5fC/LSB; 2->20fC/LSB; 3->80fC/LSB; 4->320fC/LSB; 5->1.28pC/LSB */
-      DPPParams[b].csens[ch] = 0;
+      DPPParams[b].csens[ch] = set.csens;
     }
     /* Pile-Up rejection Mode
        CAEN_DGTZ_DPP_PSD_PUR_DetectOnly -> Only Detect Pile-Up
        CAEN_DGTZ_DPP_PSD_PUR_Enabled -> Reject Pile-Up */
     DPPParams[b].purh = CAEN_DGTZ_DPP_PSD_PUR_DetectOnly;
-    DPPParams[b].purgap = 100;  // Purity Gap in LSB units (1LSB = 0.12 mV for 2Vpp Input Range, 1LSB = 0.03 mV for 0.5 Vpp Input Range )
-    DPPParams[b].blthr = 3;     // Baseline Threshold
-    DPPParams[b].trgho = 8;     // Trigger HoldOff
+    DPPParams[b].purgap = set.purgap;  // Purity Gap in LSB units (1LSB = 0.12 mV for 2Vpp Input Range, 1LSB = 0.03 mV for 0.5 Vpp Input Range )
+    DPPParams[b].blthr = set.blthr;     // Baseline Threshold
+    DPPParams[b].trgho = set.trgho;     // Trigger HoldOff
   }
 
   printf("Stuff happened and I got to the end\n");

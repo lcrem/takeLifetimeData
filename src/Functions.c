@@ -29,11 +29,12 @@
 	#define kbhit _kbhit     /* redefine POSIX 'deprecated' */
 
 #else
-    #include <unistd.h>
-    #include <stdint.h>   /* C99 compliant compilers: uint64_t */
-    #include <ctype.h>    /* toupper() */
-    #include <sys/time.h>
+#include <unistd.h>
+#include <stdint.h>   /* C99 compliant compilers: uint64_t */
+#include <ctype.h>    /* toupper() */
+#include <sys/time.h>
 #include "stdbool.h"
+
 #endif
 
 /* ###########################################################################
@@ -56,24 +57,38 @@ DAQSettings_t readDAQSettings(char infile[1000]){
 
   char line [ 128 ]; /* or other suitable maximum line size */
   while ( fgets ( line, sizeof line, fp ) != NULL )  {
-      fputs ( line, stdout ); /* write the line */
+
+      if (line[0]=='#') continue;
       
-      //Number of waveforms : 1000    
-      //Output folder : /unix/dune/purity/DAQtests/
+      char out[128];
+      int found = findLine(line, "Number of waveforms", out);
+      if (found) set.nmax = atoi(out);
+      found = findLine(line, "Output folder", out);
+      if (found) sprintf(set.outfolder, "%s", out);
+      found = findLine(line, "Trigger thresholds", out);
+      if (found) set.thr = atoi(out);
+      found = findLine(line, "Baseline averaging samples", out);
+      if (found) set.nsbl = atoi(out);
+      found = findLine(line, "Long gate", out);
+      if (found) set.lgate = atoi(out);
+      found = findLine(line, "Short gate", out);     
+      if (found) set.sgate = atoi(out);
+      found = findLine(line, "Pre gate", out);     
+      if (found) set.pgate = atoi(out);
+      found = findLine(line, "Self Trigger Mode", out);     
+      if (found) set.selft = atoi(out);
+
+      found = findLine(line, "Trigger validation acq window", out);
+      if (found) set.tvaw = atoi(out);
+      found = findLine(line, "Charge sensibility", out);     
+      if (found) set.csens = atoi(out);
       
-      //Trigger threshold : 50             
-      //Baseline averaging samples:  1     
-      //Long gate : 1000                   
-      //Short gate : 24                    
-      //Pre gate :  8                      
-      //Self Trigger Mode : 1              
-      
-      //Trigger validation acq window : 50 
-      //Charge sensibility : 0             
-      
-      //  Purity gap : 100                   
-      // Baseline threshold : 3             
-      // Trigger holdoff : 8                
+      found = findLine(line, "Purity gap", out);       
+      if (found) set.purgap = atoi(out);
+      found = findLine(line, "Baseline threshold", out);      
+      if (found) set.blthr = atoi(out);
+      found = findLine(line, "Trigger holdoff", out);      
+      if (found) set.trgho = atoi(out);
       
   }
 
@@ -82,6 +97,33 @@ DAQSettings_t readDAQSettings(char infile[1000]){
    
 } 
 
+int findLine(char line[128], char tofind[128], char fout[128]){
+
+  char *out;
+  out= strstr(line,tofind); 
+  char colon[2]; 
+  sprintf(colon, " : "); 
+
+  if (out != NULL) { 
+
+    memmove(out, out+strlen(tofind),1+strlen(out+strlen(tofind))); 
+    char *ptr;
+    ptr = strchr(out, '#');
+    if (ptr != NULL) {
+      *ptr = '\0';
+      fputs (ptr, stdout);
+    }
+
+    memmove(out, out+strlen(colon),1+strlen(out+strlen(colon)));
+
+    sprintf(fout, "%s", out);
+    //    fputs ( out, stdout ); /* write the line */
+    return 1;
+  } 
+
+  return 0;
+
+}
 
 
 /*! \fn      static long get_time()
