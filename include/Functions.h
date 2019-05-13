@@ -76,6 +76,8 @@ DAQSettings_t readDAQSettings(char infile[1000]);
 
 int findLine(char line[128], char tofind[128], char fout[128]);
 
+void printDAQSettings(DAQSettings_t set);
+
 /*! \fn      static long get_time()
 *   \brief   Get time in milliseconds
 *   \return  time in msec */ 

@@ -210,6 +210,7 @@ int main(int argc, char *argv[])
 
   // Function that reads the settings 
   DAQSettings_t set = readDAQSettings(configFile);
+  printDAQSettings(set);
   MAX_WAVEFORMS=set.nmax;
   sprintf(outdir, "%s", set.outfolder);
 
@@ -332,7 +333,7 @@ int main(int argc, char *argv[])
       /* Self Trigger Mode:
 	 0 -> Disabled
 	 1 -> Enabled */
-      DPPParams[b].selft[ch] = set.selft;
+      DPPParams[b].selft[ch] = 1;//set.selft;
       // Trigger configuration:
       //    CAEN_DGTZ_DPP_TriggerMode_Normal ->  Each channel can self-trigger independently from the other channels
       //    CAEN_DGTZ_DPP_TriggerMode_Coincidence -> A validation signal must occur inside the shaped trigger coincidence window
@@ -368,7 +369,7 @@ int main(int argc, char *argv[])
 
   printf("Stuff happened and I got to the end\n");
 
-  goto QuitProgram;    
+  //  goto QuitProgram;    
 
   /* *************************************************************************************** */
   /* Open the digitizer and read board information                                           */
@@ -602,6 +603,8 @@ int main(int argc, char *argv[])
       
   int count = 0;
 
+  int countBf0=0;
+
   while(count < MAX_WAVEFORMS){
 
     /* Read data from the boards */ 
@@ -613,8 +616,11 @@ int main(int argc, char *argv[])
 	printf("Readout Error\n"); 
 	goto QuitProgram;     
       } 
-      if (BufferSize == 0) 	continue; 
-
+      if (BufferSize == 0){
+ 	countBf0 = countBf0 + 1;
+	if (countBf0>1000000) goto QuitProgram;
+	continue; 
+      }
       Nb += BufferSize; 
       //ret = DataConsistencyCheck((uint32_t *)buffer, BufferSize/4); 
       ret |= CAEN_DGTZ_GetDPPEvents(handle[b], buffer, BufferSize, Events, NumEvents); 

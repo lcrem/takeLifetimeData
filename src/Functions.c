@@ -53,8 +53,6 @@ DAQSettings_t readDAQSettings(char infile[1000]){
       exit(EXIT_FAILURE); 
     } 
 
-  printf("The contents of %s file are:\n", infile); 
-
   char line [ 128 ]; /* or other suitable maximum line size */
   while ( fgets ( line, sizeof line, fp ) != NULL )  {
 
@@ -65,7 +63,7 @@ DAQSettings_t readDAQSettings(char infile[1000]){
       if (found) set.nmax = atoi(out);
       found = findLine(line, "Output folder", out);
       if (found) sprintf(set.outfolder, "%s", out);
-      found = findLine(line, "Trigger thresholds", out);
+      found = findLine(line, "Trigger threshold", out);
       if (found) set.thr = atoi(out);
       found = findLine(line, "Baseline averaging samples", out);
       if (found) set.nsbl = atoi(out);
@@ -122,6 +120,24 @@ int findLine(char line[128], char tofind[128], char fout[128]){
   } 
 
   return 0;
+
+}
+
+void printDAQSettings(DAQSettings_t set){
+
+  printf("Number of waveforms : %i \n", set.nmax);
+  printf("Output folder : %s \n", set.outfolder);
+  printf("Trigger thresholds : %i \n", set.thr);
+  printf("Baseline averaging samples : %i \n", set.nsbl);
+  printf("Long gate : %i \n", set.lgate);
+  printf("Short gate : %i \n", set.sgate);     
+  printf("Pre gate : %i \n", set.pgate);     
+  printf("Self Trigger Mode : %i \n", set.selft);     
+  printf("Trigger validation acq window : %i \n", set.tvaw);
+  printf("Charge sensibility : %i \n", set.csens);     
+  printf("Purity gap : %i \n", set.purgap);       
+  printf("Baseline threshold : %i \n", set.blthr);      
+  printf("Trigger holdoff : %i \n", set.trgho);      
 
 }
 
@@ -248,7 +264,7 @@ int SaveFunWaveform(int b, int ch, int trace, int size, int16_t *WaveData, char 
     int i;
     char filename[20];
 
-    sprintf(filename, "%sWaveform_%d_%d_%d.txt", inName, b, ch, trace);
+    sprintf(filename, "%s/Waveform_%d_%d_%d.txt", inName, b, ch, trace);
     fh = fopen(filename, "w");
     if (fh == NULL)
         return -1;
