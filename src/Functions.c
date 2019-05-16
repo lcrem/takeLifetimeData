@@ -63,30 +63,46 @@ DAQSettings_t readDAQSettings(char infile[1000]){
       if (found) set.nmax = atoi(out);
       found = findLine(line, "Output folder", out);
       if (found) sprintf(set.outfolder, "%s", out);
+      found = findLine(line, "Record length", out);
+      if (found) set.length = atoi(out);
       found = findLine(line, "Trigger threshold", out);
       if (found) set.thr = atoi(out);
-      found = findLine(line, "Baseline averaging samples", out);
-      if (found) set.nsbl = atoi(out);
-      found = findLine(line, "Long gate", out);
-      if (found) set.lgate = atoi(out);
-      found = findLine(line, "Short gate", out);     
-      if (found) set.sgate = atoi(out);
-      found = findLine(line, "Pre gate", out);     
-      if (found) set.pgate = atoi(out);
       found = findLine(line, "Self Trigger Mode", out);     
       if (found) set.selft = atoi(out);
+      found = findLine(line, "Post Trigger size", out);
+      if (found) set.postt = atoi(out);
 
-      found = findLine(line, "Trigger validation acq window", out);
-      if (found) set.tvaw = atoi(out);
-      found = findLine(line, "Charge sensibility", out);     
-      if (found) set.csens = atoi(out);
+      char tofind[100];
+      int ich=0;
+      while (ich<8){
+	sprintf(tofind, "Channel %i", ich);
+	found = findLine(line, tofind, out);
+	if (found) set.chEnabled[ich] = atoi(out);
+	ich = ich+1;
+      }
+
+
+      // DPP-PSD specific - deprecated for us
+      /* found = findLine(line, "Baseline averaging samples", out); */
+      /* if (found) set.nsbl = atoi(out); */
+      /* found = findLine(line, "Long gate", out); */
+      /* if (found) set.lgate = atoi(out); */
+      /* found = findLine(line, "Short gate", out);      */
+      /* if (found) set.sgate = atoi(out); */
+      /* found = findLine(line, "Pre gate", out);      */
+      /* if (found) set.pgate = atoi(out); */
+
+      /* found = findLine(line, "Trigger validation acq window", out); */
+      /* if (found) set.tvaw = atoi(out); */
+      /* found = findLine(line, "Charge sensibility", out);      */
+      /* if (found) set.csens = atoi(out); */
       
-      found = findLine(line, "Purity gap", out);       
-      if (found) set.purgap = atoi(out);
-      found = findLine(line, "Baseline threshold", out);      
-      if (found) set.blthr = atoi(out);
-      found = findLine(line, "Trigger holdoff", out);      
-      if (found) set.trgho = atoi(out);
+      /* found = findLine(line, "Purity gap", out);        */
+      /* if (found) set.purgap = atoi(out); */
+      /* found = findLine(line, "Baseline threshold", out);       */
+      /* if (found) set.blthr = atoi(out); */
+      /* found = findLine(line, "Trigger holdoff", out);       */
+      /* if (found) set.trgho = atoi(out); */
       
   }
 
@@ -99,8 +115,6 @@ int findLine(char line[128], char tofind[128], char fout[128]){
 
   char *out;
   out= strstr(line,tofind); 
-  char colon[2]; 
-  sprintf(colon, " : "); 
 
   if (out != NULL) { 
 
@@ -112,7 +126,16 @@ int findLine(char line[128], char tofind[128], char fout[128]){
       fputs (ptr, stdout);
     }
 
-    memmove(out, out+strlen(colon),1+strlen(out+strlen(colon)));
+    memmove(out, out+strlen(" : "),1+strlen(out+strlen(" : ")));
+
+    char *ptr2, *ptr3;
+    ptr2 = strchr(out, ' ');
+    if (ptr2 != NULL) {
+      *ptr2 = '\0';
+      fputs (ptr2, stdout);
+    }
+
+    
 
     sprintf(fout, "%s", out);
     //    fputs ( out, stdout ); /* write the line */
@@ -127,17 +150,28 @@ void printDAQSettings(DAQSettings_t set){
 
   printf("Number of waveforms : %i \n", set.nmax);
   printf("Output folder : %s \n", set.outfolder);
+  printf("Record Length : %i \n", set.length);
   printf("Trigger thresholds : %i \n", set.thr);
-  printf("Baseline averaging samples : %i \n", set.nsbl);
-  printf("Long gate : %i \n", set.lgate);
-  printf("Short gate : %i \n", set.sgate);     
-  printf("Pre gate : %i \n", set.pgate);     
   printf("Self Trigger Mode : %i \n", set.selft);     
-  printf("Trigger validation acq window : %i \n", set.tvaw);
-  printf("Charge sensibility : %i \n", set.csens);     
-  printf("Purity gap : %i \n", set.purgap);       
-  printf("Baseline threshold : %i \n", set.blthr);      
-  printf("Trigger holdoff : %i \n", set.trgho);      
+  printf("Post Trigger Size : %i \n", set.postt);     
+
+  int ich=0;
+  while (ich<8){
+    printf("Channel %i enabled/disabled: %i \n", ich, set.chEnabled[ich]);
+    ich = ich+1;
+  }
+
+
+  //DPP-PSD specific - deprecated for us
+  /* printf("Baseline averaging samples : %i \n", set.nsbl); */
+  /* printf("Long gate : %i \n", set.lgate); */
+  /* printf("Short gate : %i \n", set.sgate);      */
+  /* printf("Pre gate : %i \n", set.pgate);      */
+  /* printf("Trigger validation acq window : %i \n", set.tvaw); */
+  /* printf("Charge sensibility : %i \n", set.csens);      */
+  /* printf("Purity gap : %i \n", set.purgap);        */
+  /* printf("Baseline threshold : %i \n", set.blthr);       */
+  /* printf("Trigger holdoff : %i \n", set.trgho);       */
 
 }
 
@@ -265,6 +299,7 @@ int SaveFunWaveform(int b, int ch, int trace, int size, int16_t *WaveData, char 
     char filename[180];
 
     sprintf(filename, "%s/Waveform_%d_%d_%d.txt", inName, b, ch, trace);
+    printf("Filename is %s \n", filename);
     fh = fopen(filename, "w");
     if (fh == NULL)
         return -1;

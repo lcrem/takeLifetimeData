@@ -38,11 +38,11 @@
  *  ########################################################################### */
 
 /* --------------------------------------------------------------------------------------------------------- */
-/*! \fn      int ProgramDigitizer(int handle, DigitizerParams_t Params, CAEN_DGTZ_DPPParamsPHA_t DPPParams)
+/*! \fn      int ProgramDigitizer(int handle, DigitizerParams_t Params, DAQSettings_t set)
  *   \brief   Program the registers of the digitizer with the relevant parameters
  *   \return  0=success; -1=error */
 /* --------------------------------------------------------------------------------------------------------- */
-int ProgramDigitizer(int handle, DigitizerParams_t Params, CAEN_DGTZ_DPP_PSD_Params_t DPPParams)
+int ProgramDigitizer(int handle, DigitizerParams_t Params, DAQSettings_t set)
 {
   /* This function uses the CAENDigitizer API functions to perform the digitizer's initial configuration */
   int i, ret = 0;
@@ -61,7 +61,7 @@ int ProgramDigitizer(int handle, DigitizerParams_t Params, CAEN_DGTZ_DPP_PSD_Par
      CAEN_DGTZ_DPP_SAVE_PARAM_TimeOnly        Only time is returned
      CAEN_DGTZ_DPP_SAVE_PARAM_EnergyAndTime    Both charge and time are returned
      CAEN_DGTZ_DPP_SAVE_PARAM_None            No histogram data is returned */
-  ret |= CAEN_DGTZ_SetDPPAcquisitionMode(handle, Params.AcqMode, CAEN_DGTZ_DPP_SAVE_PARAM_EnergyAndTime);
+  //ret |= CAEN_DGTZ_SetDPPAcquisitionMode(handle, Params.AcqMode, CAEN_DGTZ_DPP_SAVE_PARAM_EnergyAndTime);
     
   // Set the digitizer acquisition mode (CAEN_DGTZ_SW_CONTROLLED or CAEN_DGTZ_S_IN_CONTROLLED)
   ret |= CAEN_DGTZ_SetAcquisitionMode(handle, CAEN_DGTZ_SW_CONTROLLED);
@@ -82,18 +82,23 @@ int ProgramDigitizer(int handle, DigitizerParams_t Params, CAEN_DGTZ_DPP_PSD_Par
   // Set the enabled channels
   ret |= CAEN_DGTZ_SetChannelEnableMask(handle, Params.ChannelMask);
 
-  // Set how many events to accumulate in the board memory before being available for readout
-  ret |= CAEN_DGTZ_SetDPPEventAggregation(handle, Params.EventAggr, 0);
+  // Disable self trigger on all channels
+  ret |= CAEN_DGTZ_SetChannelSelfTrigger(handle,CAEN_DGTZ_TRGMODE_DISABLED,0xFF); 
+
     
   /* Set the mode used to syncronize the acquisition between different boards.
      In this example the sync is disabled */
   ret |= CAEN_DGTZ_SetRunSynchronizationMode(handle, CAEN_DGTZ_RUN_SYNC_Disabled);
-    
+ 
+  ret |= CAEN_DGTZ_SetMaxNumEventsBLT(handle,1);  /* Set the max number of events to transfer in a sigle readout */
+
   // Set the DPP specific parameters for the channels in the given channelMask
-  ret |= CAEN_DGTZ_SetDPPParameters(handle, Params.ChannelMask, &DPPParams);
+  //  ret |= CAEN_DGTZ_SetDPPParameters(handle, Params.ChannelMask, &DPPParams);
     
   for(i=0; i<MaxNChannels; i++) {
     if (Params.ChannelMask & (1<<i)) {
+
+      printf ("Channel %i is enabled \n", i);
       // Set the number of samples for each waveform 
       //for x725 and x730 Recordlength is common to paired channels (you can set different RL for different channel pairs)
       if (i % 2 == 0)
@@ -101,57 +106,19 @@ int ProgramDigitizer(int handle, DigitizerParams_t Params, CAEN_DGTZ_DPP_PSD_Par
 
       // Set a DC offset to the input signal to adapt it to digitizer's dynamic range
       ret |= CAEN_DGTZ_SetChannelDCOffset(handle, i, 0x8000);
-            
-      // Set the Pre-Trigger size (in samples)
-      ret |= CAEN_DGTZ_SetDPPPreTriggerSize(handle, i, 30); 
-            
+           
+      
+      ret |= CAEN_DGTZ_SetChannelTriggerThreshold(handle,i,set.thr);                  /* Set selfTrigger threshold */
+	   
       // Set the polarity for the given channel (CAEN_DGTZ_PulsePolarityPositive or CAEN_DGTZ_PulsePolarityNegative)
       ret |= CAEN_DGTZ_SetChannelPulsePolarity(handle, i, Params.PulsePolarity);
     }
   }
 
-  /* Set the virtual probes
+  // Set post trigger size 
+  ret |= CAEN_DGTZ_SetPostTriggerSize(handle, set.postt);
 
-     DPP-PSD for x725 and x730 boards can save:
-     2 analog waveforms:
-     Analog Trace 1: it can be specified with the ANALOG_TRACE_1 parameter;
-     Analog Trace 2: it can be specified with the ANALOG_TRACE_2 parameter
-     2 digital waveforms:
-     Digital Trace 1:   it can be specified with the DIGITAL_TRACE_1 parameters
-     Digital Trace 2:   it can be specified with the DIGITAL_TRACE_2 parameters
 
-     Virtual Probes types for Trace 1:
-     CAEN_DGTZ_DPP_VIRTUALPROBE_Input        -> Save the Input signal waveform 
-     CAEN_DGTZ_DPP_VIRTUALPROBE_CFD          -> Save the CFD waveform (only if discrimination mode is  CAEN_DGTZ_DPP_DISCR_MODE_CFD)
-
-     Virtual Probes types for Trace 2:
-     CAEN_DGTZ_DPP_VIRTUALPROBE_Baseline     -> Save the Baseline waveform (mean on nsbl parameter)
-     CAEN_DGTZ_DPP_VIRTUALPROBE_CFD          -> Save the CFD waveform (only if discrimination mode is  CAEN_DGTZ_DPP_DISCR_MODE_CFD)
-     CAEN_DGTZ_DPP_VIRTUALPROBE_None			-> Dual trace is disabled
-
-     Digital Probes types for Digital Trace 1(x725, x730):
-     CAEN_DGTZ_DPP_DIGITALPROBE_Gate   -> GateLong waveform
-     CAEN_DGTZ_DPP_DIGITALPROBE_OverThr
-     CAEN_DGTZ_DPP_DIGITALPROBE_TRGOut
-     CAEN_DGTZ_DPP_DIGITALPROBE_CoincWin
-     CAEN_DGTZ_DPP_DIGITALPROBE_PileUp
-     CAEN_DGTZ_DPP_DIGITALPROBE_Coincidence
-     CAEN_DGTZ_DPP_DIGITALPROBE_Trigger
-
-     Digital Probes types for Digital Trace 2(x725)/3(x730):
-     CAEN_DGTZ_DPP_DIGITALPROBE_GateShort
-     CAEN_DGTZ_DPP_DIGITALPROBE_OverThr
-     CAEN_DGTZ_DPP_DIGITALPROBE_TRGVal
-     CAEN_DGTZ_DPP_DIGITALPROBE_TRGHoldoff
-     CAEN_DGTZ_DPP_DIGITALPROBE_PileUp
-     CAEN_DGTZ_DPP_DIGITALPROBE_Coincidence
-     CAEN_DGTZ_DPP_DIGITALPROBE_Trigger
-  */
-
-  ret |= CAEN_DGTZ_SetDPP_VirtualProbe(handle, ANALOG_TRACE_1, CAEN_DGTZ_DPP_VIRTUALPROBE_Input);
-  ret |= CAEN_DGTZ_SetDPP_VirtualProbe(handle, ANALOG_TRACE_2, CAEN_DGTZ_DPP_VIRTUALPROBE_Baseline);
-  ret |= CAEN_DGTZ_SetDPP_VirtualProbe(handle, DIGITAL_TRACE_1, CAEN_DGTZ_DPP_DIGITALPROBE_Gate);
-  ret |= CAEN_DGTZ_SetDPP_VirtualProbe(handle, DIGITAL_TRACE_2, CAEN_DGTZ_DPP_DIGITALPROBE_GateShort);
   if (ret) {
     printf("Warning: errors found during the programming of the digitizer.\nSome settings may not be executed\n");
     return ret;
@@ -233,16 +200,15 @@ int main(int argc, char *argv[])
   CAEN_DGTZ_ErrorCode ret;
 
   /* Buffers to store the data. The memory must be allocated using the appropriate
-     CAENDigitizer API functions (see below), so they must not be initialized here
-     NB: you must use the right type for different DPP analysis (in this case PSD) */
+     CAENDigitizer API functions (see below), so they must not be initialized here */
   char *buffer = NULL;                                    // readout buffer
-  CAEN_DGTZ_DPP_PSD_Event_t       *Events[MaxNChannels];  // events buffer
-  CAEN_DGTZ_DPP_PSD_Waveforms_t   *Waveform=NULL;         // waveforms buffer
-
+  /* CAEN_DGTZ_DPP_PSD_Event_t       *Events[MaxNChannels];  // events buffer */
+  /* CAEN_DGTZ_DPP_PSD_Waveforms_t   *Waveform=NULL;         // waveforms buffer */
+  
   /* The following variables will store the digitizer configuration parameters */
-  CAEN_DGTZ_DPP_PSD_Params_t DPPParams[MAXNB];
+  /* CAEN_DGTZ_DPP_PSD_Params_t DPPParams[MAXNB]; */
   DigitizerParams_t Params[MAXNB];
-
+  
   /* Arrays for data analysis */
   uint64_t PrevTime[MAXNB][MaxNChannels];
   uint64_t ExtendedTT[MAXNB][MaxNChannels];
@@ -261,6 +227,8 @@ int main(int argc, char *argv[])
   int Quit=0;
   int AcqRun = 0;
   uint32_t AllocatedSize, BufferSize;
+  uint32_t numEvents;
+
   int Nb=0;
   int DoSaveWave[MAXNB][MaxNChannels];
   int MajorNumber;
@@ -268,6 +236,11 @@ int main(int argc, char *argv[])
   uint64_t CurrentTime, PrevRateTime, ElapsedTime;
   uint32_t NumEvents[MaxNChannels];
   CAEN_DGTZ_BoardInfo_t           BoardInfo;
+  CAEN_DGTZ_EventInfo_t eventInfo;
+  CAEN_DGTZ_UINT16_EVENT_t *Evt = NULL;
+  char * evtptr = NULL;
+  int count[MAXNB];
+
   uint32_t temp;
 
   memset(DoSaveWave, 0, MAXNB*MaxNChannels*sizeof(int));
@@ -278,7 +251,7 @@ int main(int argc, char *argv[])
   /* Set Parameters                                                                          */
   /* *************************************************************************************** */
   memset(&Params, 0, MAXNB*sizeof(DigitizerParams_t));
-  memset(&DPPParams, 0, MAXNB*sizeof(CAEN_DGTZ_DPP_PSD_Params_t));
+  //  memset(&DPPParams, 0, MAXNB*sizeof(CAEN_DGTZ_DPP_PSD_Params_t));
   for(b=0; b<MAXNB; b++) {
     for(ch=0; ch<MaxNChannels; ch++) {
       EHistoShort[b][ch] = NULL; // Set all histograms pointers to NULL (we will allocate them later)
@@ -286,7 +259,7 @@ int main(int argc, char *argv[])
       EHistoRatio[b][ch] = NULL;
     }
 
-    /****************************\
+    /****************************		\
      * Communication Parameters   *
         \****************************/
     // Direct USB connection
@@ -304,72 +277,27 @@ int main(int argc, char *argv[])
     // USB connection to V1718 bridge and access to the board with VME bus
     //Params[b].LinkType = CAEN_DGTZ_USB;  // Link Type (CAEN_DGTZ_PCIE_OpticalLink for A3818)
     //Params[b].VMEBaseAddress = 0x32110000;  // VME Base Address (only for VME bus access; must be 0 for direct connection (CONET or USB)
+
+    uint32_t mask;
+    for (ch=0; ch<MaxNChannels; ch++){
+      if (set.chEnabled[ch]==1){
+	mask |= 1<<ch ;
+      }
+    }
+    
         
     Params[b].IOlev = CAEN_DGTZ_IOLevel_TTL;
     /****************************\
      *  Acquisition parameters    *
         \****************************/
-    Params[b].AcqMode = CAEN_DGTZ_DPP_ACQ_MODE_Mixed;          // or CAEN_DGTZ_DPP_ACQ_MODE_List 
-    Params[b].RecordLength = 10000;                              // Num of samples of the waveforms (only for Oscilloscope mode) 
-    Params[b].ChannelMask = 0xFF;                               // Channel enable mask  
-    Params[b].EventAggr = 1;                                  // number of events in one aggregate (0=automatic) 17554
+    //Params[b].AcqMode = CAEN_DGTZ_DPP_ACQ_MODE_Mixed;          // or CAEN_DGTZ_DPP_ACQ_MODE_List 
+    Params[b].RecordLength = set.length;                       // Num of samples of the waveforms (only for Oscilloscope mode) 
+    Params[b].ChannelMask = mask; //0xFF;                              // Channel enable mask  
+    Params[b].EventAggr = 1;                                   // Number of events in one aggregate (0=automatic) 17554
     Params[b].PulsePolarity = CAEN_DGTZ_PulsePolarityPositive; // Pulse Polarity (this parameter can be individual)
 
-    /****************************\
-     *      DPP parameters        *
-        \****************************/
-    for(ch=0; ch<MaxNChannels; ch++) {
-      DPPParams[b].thr[ch] = set.thr;        // Trigger Threshold
-      /* The following parameter is used to specifiy the number of samples for the baseline averaging:
-	 0 -> absolute Bl
-	 1 -> 16samp
-	 2 -> 64samp
-	 3 -> 256samp
-	 4 -> 1024samp */
-      DPPParams[b].nsbl[ch]  = set.nsbl;
-      DPPParams[b].lgate[ch] = set.lgate;    // Long Gate Width (N*2ns for x730  and N*4ns for x725)
-      DPPParams[b].sgate[ch] = set.sgate;    // Short Gate Width (N*2ns for x730  and N*4ns for x725)
-      DPPParams[b].pgate[ch] = set.pgate;     // Pre Gate Width (N*2ns for x730  and N*4ns for x725) 
-      /* Self Trigger Mode:
-	 0 -> Disabled
-	 1 -> Enabled */
-      DPPParams[b].selft[ch] = 1;//set.selft;
-      // Trigger configuration:
-      //    CAEN_DGTZ_DPP_TriggerMode_Normal ->  Each channel can self-trigger independently from the other channels
-      //    CAEN_DGTZ_DPP_TriggerMode_Coincidence -> A validation signal must occur inside the shaped trigger coincidence window
-      DPPParams[b].trgc[ch] = CAEN_DGTZ_DPP_TriggerMode_Coincidence;
+  } 
 
-      /*Discrimination mode for the event selection 
-	CAEN_DGTZ_DPP_DISCR_MODE_LED -> Leading Edge Distrimination
-	CAEN_DGTZ_DPP_DISCR_MODE_CFD -> Constant Fraction Distrimination*/
-      DPPParams[b].discr[ch] = CAEN_DGTZ_DPP_DISCR_MODE_LED;
-
-      /*CFD delay (N*2ns for x730  and N*4ns for x725)  */
-      DPPParams[b].cfdd[ch] = 4;  
-	    
-      /*CFD fraction: 0->25%; 1->50%; 2->75%; 3->100% */
-      DPPParams[b].cfdf[ch] = 0;
-
-      /* Trigger Validation Acquisition Window */
-      DPPParams[b].tvaw[ch] = set.tvaw;
-
-      /* Charge sensibility: 
-	 Options for Input Range 2Vpp: 0->5fC/LSB; 1->20fC/LSB; 2->80fC/LSB; 3->320fC/LSB; 4->1.28pC/LSB; 5->5.12pC/LSB 
-	 Options for Input Range 0.5Vpp: 0->1.25fC/LSB; 1->5fC/LSB; 2->20fC/LSB; 3->80fC/LSB; 4->320fC/LSB; 5->1.28pC/LSB */
-      DPPParams[b].csens[ch] = set.csens;
-    }
-    /* Pile-Up rejection Mode
-       CAEN_DGTZ_DPP_PSD_PUR_DetectOnly -> Only Detect Pile-Up
-       CAEN_DGTZ_DPP_PSD_PUR_Enabled -> Reject Pile-Up */
-    DPPParams[b].purh = CAEN_DGTZ_DPP_PSD_PUR_DetectOnly;
-    DPPParams[b].purgap = set.purgap;  // Purity Gap in LSB units (1LSB = 0.12 mV for 2Vpp Input Range, 1LSB = 0.03 mV for 0.5 Vpp Input Range )
-    DPPParams[b].blthr = set.blthr;     // Baseline Threshold
-    DPPParams[b].trgho = set.trgho;     // Trigger HoldOff
-  }
-
-  printf("Stuff happened and I got to the end\n");
-
-  //  goto QuitProgram;    
 
   /* *************************************************************************************** */
   /* Open the digitizer and read board information                                           */
@@ -414,62 +342,60 @@ int main(int argc, char *argv[])
 
     // Check firmware revision (only DPP firmware can be used with this Demo) */
     sscanf(BoardInfo.AMC_FirmwareRel, "%d", &MajorNumber);
-    if (MajorNumber != 131 && MajorNumber != 132 && MajorNumber != 136) {
-      printf("This digitizer has not a DPP-PSD firmware\n");
+    if (MajorNumber >= 128) {
+      printf("This digitizer has a DPP firmware and is incompatible with me!\n");
       goto QuitProgram;
     }
 
   }
-
-  printf("%s %i \n", __FUNCTION__, __LINE__);
 
 
   /* *************************************************************************************** */
   /* Program the digitizer (see function ProgramDigitizer)                                   */
   /* *************************************************************************************** */
   for(b=0; b<MAXNB; b++) {
-    ret = ProgramDigitizer(handle[b], Params[b], DPPParams[b]);
+    ret = ProgramDigitizer(handle[b], Params[b], set);
     if (ret) {
       printf("Failed to program the digitizer\n");
       goto QuitProgram;
     }
   }
-  printf("%s %i \n", __FUNCTION__, __LINE__);
+
+
   /* WARNING: The mallocs MUST be done after the digitizer programming,
      because the following functions needs to know the digitizer configuration
      to allocate the right memory amount */
   /* Allocate memory for the readout buffer */
   ret = CAEN_DGTZ_MallocReadoutBuffer(handle[0], &buffer, &AllocatedSize);
   /* Allocate memory for the events */
-  ret |= CAEN_DGTZ_MallocDPPEvents(handle[0], Events, &AllocatedSize); 
+  //  ret |= CAEN_DGTZ_MallocDPPEvents(handle[0], Events, &AllocatedSize); 
   /* Allocate memory for the waveforms */
-  ret |= CAEN_DGTZ_MallocDPPWaveforms(handle[0], &Waveform, &AllocatedSize); 
+  // ret |= CAEN_DGTZ_MallocDPPWaveforms(handle[0], &Waveform, &AllocatedSize);
+
+  printf("Allocated size %i and size of it %i\n", AllocatedSize, sizeof(AllocatedSize));
+
+ 
   if (ret) {
     printf("Can't allocate memory buffers\n");
     goto QuitProgram;    
   }
-  printf("%s %i \n", __FUNCTION__, __LINE__);
-
         
   /* *************************************************************************************** */
   /* Readout Loop                                                                            */
   /* *************************************************************************************** */
   // Clear Histograms and counters
+
   for(b=0; b<MAXNB; b++) {
     for(ch=0; ch<MaxNChannels; ch++) {
       // Allocate Memory for Histos and set them to 0
-      EHistoShort[b][ch] = (uint32_t *)malloc( (1<<MAXNBITS)*sizeof(uint32_t) );
-      memset(EHistoShort[b][ch], 0, (1<<MAXNBITS)*sizeof(uint32_t));
-      EHistoLong[b][ch] = (uint32_t *)malloc( (1<<MAXNBITS)*sizeof(uint32_t) );
-      memset(EHistoLong[b][ch], 0, (1<<MAXNBITS)*sizeof(uint32_t));
-      EHistoRatio[b][ch] = (float *)malloc( (1<<MAXNBITS)*sizeof(float) );
-      memset(EHistoRatio[b][ch], 0, (1<<MAXNBITS)*sizeof(float));
       TrgCnt[b][ch] = 0;
       ECnt[b][ch] = 0;
       PrevTime[b][ch] = 0;
       ExtendedTT[b][ch] = 0;
     }
   }
+
+
 
   PrevRateTime = get_time();
   AcqRun = 0;
@@ -527,90 +453,22 @@ int main(int argc, char *argv[])
     goto QuitProgram;    
   }
 
-  /* PrintInterface(); */
-  /* printf("Type a command: "); */
-  /* while(!Quit) { */
-
-  /*     // Check keyboard */
-  /*     if(kbhit()) { */
-  /*         char c; */
-  /*         c = getch(); */
-  /*         if (c == 'q') */
-  /*             Quit = 1; */
-  /*         if (c == 't') */
-  /*             for(b=0; b<MAXNB; b++) */
-  /*                 CAEN_DGTZ_SendSWtrigger(handle[b]); /\* Send a software trigger to each board *\/ */
-  /*         if (c == 'h') */
-  /*             for (b = 0; b < MAXNB; b++) */
-  /*                 for (ch = 0; ch < MaxNChannels; ch++) */
-  /*                     if (ECnt[b][ch] != 0) { */
-  /*                         /\* Save Histograms to file for each board and channel *\/ */
-  /*                         SaveHistogram("HistoShort", b, ch, EHistoShort[b][ch]);   */
-  /*                         SaveHistogram("HistoLong", b, ch, EHistoLong[b][ch]); */
-  /*                     } */
-  /*         if (c == 'w') */
-  /*             for(b=0; b<MAXNB; b++) */
-  /*                 for(ch=0; ch<MaxNChannels; ch++) */
-  /*                     DoSaveWave[b][ch] = 1; /\* save waveforms to file for each channel for each board (at next trigger) *\/ */
-  /*         if (c == 'r')  { */
-  /*             for(b=0; b<MAXNB; b++) { */
-  /*                 CAEN_DGTZ_SWStopAcquisition(handle[b]);  */
-  /*                 printf("Restarted\n"); */
-  /*                 CAEN_DGTZ_ClearData(handle[b]); */
-  /*                 CAEN_DGTZ_SWStartAcquisition(handle[b]); */
-  /*             } */
-  /*         } */
-  /*         if (c == 's')  { */
-  /*             for(b=0; b<MAXNB; b++) { */
-  /*                 // Start Acquisition */
-  /*                 // NB: the acquisition for each board starts when the following line is executed */
-  /*                 // so in general the acquisition does NOT starts syncronously for different boards */
-  /*                 CAEN_DGTZ_SWStartAcquisition(handle[b]); */
-  /*                 printf("Acquisition Started for Board %d\n", b); */
-  /*             } */
-  /*             AcqRun = 1; */
-  /*         } */
-  /*         if (c == 'S')  { */
-  /*             for (b = 0; b < MAXNB; b++) { */
-  /*                 // Stop Acquisition */
-  /*                 CAEN_DGTZ_SWStopAcquisition(handle[b]);  */
-  /*                 printf("Acquisition Stopped for Board %d\n", b); */
-  /*             } */
-  /*             AcqRun = 0; */
-  /*         } */
-  /* 			if (c == 'T') { */
-  /* 				for (b = 0; b < MAXNB; b++) { */
-  /* 					printf("\n"); */
-  /* 					for (ch = 0; ch < MaxNChannels; ch++) { */
-  /* 						// Read ADC temperature */
-  /* 						CAEN_DGTZ_ReadTemperature(handle[b], ch, &temp); */
-  /* 						printf("Ch %d  ADC temperature: %d %cC\n", ch, temp, 248); */
-  /* 					} */
-  /* 				} */
-  /* 				printf("Type a command: "); */
-  /* 			} */
-  /* 			if (c == 'C') { */
-  /* 				for (b = 0; b < MAXNB; b++) */
-  /* 					CAEN_DGTZ_Calibrate(handle[b]); */
-  /* 				printf("\nADC calibration ready\n"); */
-  /* 				printf("Type a command: "); */
-
-  /* 			} */
-  /*     } */
-  /*     if (!AcqRun) { */
-  /*         Sleep(10); */
-  /*         continue; */
-  /*     } */
-    
-      
-  int count = 0;
+  
 
   int countBf0=0;
 
-  while(count < MAX_WAVEFORMS){
+
 
     /* Read data from the boards */ 
     for(b=0; b<MAXNB; b++) { 
+      count[b]=0;
+
+      while(count[b] < MAX_WAVEFORMS){
+
+	//printf("Sending software trigger now?\n");  
+	// just test  
+	//	CAEN_DGTZ_SendSWtrigger(handle[b]); // Send a software trigger to each board   
+
 
       /* Read data from the board */ 
       ret = CAEN_DGTZ_ReadData(handle[b], CAEN_DGTZ_SLAVE_TERMINATED_READOUT_MBLT, buffer, &BufferSize); 
@@ -620,71 +478,105 @@ int main(int argc, char *argv[])
       } 
       if (BufferSize == 0){
  	countBf0 = countBf0 + 1;
-	if (countBf0>1000000) goto QuitProgram;
+	printf("Got nothing\n");
+	/* if (countBf0>10000) goto QuitProgram; */
 	continue; 
       }
       Nb += BufferSize; 
-      //ret = DataConsistencyCheck((uint32_t *)buffer, BufferSize/4); 
-      ret |= CAEN_DGTZ_GetDPPEvents(handle[b], buffer, BufferSize, Events, NumEvents); 
-      if (ret) { 
-	printf("Data Error: %d\n", ret); 
-	goto QuitProgram; 
-      } 
+      printf ("Got something \n");
+
+      /* The buffer red from the digitizer is used in the other functions to get the event data
+	 The following function returns the number of events in the buffer */
+      ret |= CAEN_DGTZ_GetNumEvents(handle[b],buffer,BufferSize,&numEvents);
       
-      /* Analyze data */ 
-      for(ch=0; ch<MaxNChannels; ch++) { 
+      printf(".");
+      count[b] +=numEvents;
+      for (i=0;i<numEvents;i++) {
+	/* Get the Infos and pointer to the event */
+	ret = CAEN_DGTZ_GetEventInfo(handle[b],buffer,BufferSize,i,&eventInfo,&evtptr);
 	
-	printf("Channel is %i with events %i \n", ch, NumEvents[ch]);
-
-	if (!(Params[b].ChannelMask & (1<<ch)))  
-	  continue;  
+	/* Decode the event to get the data */
+	ret = CAEN_DGTZ_DecodeEvent(handle[b],evtptr,&Evt);
 	
-	/* Update Histograms */ 
-	for(ev=0; ev<NumEvents[ch]; ev++) { 
-	  
-	  TrgCnt[b][ch]++; 
-	  /* Time Tag */ 
-	  if (Events[ch][ev].TimeTag < PrevTime[b][ch])  
-	    ExtendedTT[b][ch]++; 
-	  PrevTime[b][ch] = Events[ch][ev].TimeTag; 
-	  /* Energy */ 
-	  if ( (Events[ch][ev].ChargeLong > 0) && (Events[ch][ev].ChargeShort > 0)) { 
-	    // Fill the histograms 
-	    EHistoShort[b][ch][(Events[ch][ev].ChargeShort) & BitMask]++; 
-	    EHistoLong[b][ch][(Events[ch][ev].ChargeLong) & BitMask]++; 
-	    ECnt[b][ch]++; 
-	  } 
-       
-	  /* Get Waveforms (only from 1st event in the buffer) */ 
-	  /* if ((Params[b].AcqMode != CAEN_DGTZ_DPP_ACQ_MODE_List) && DoSaveWave[b][ch] && (ev == 0)) {  */
-	  int size; 
-	  int16_t *WaveLine; 
-	  uint8_t *DigitalWaveLine; 
-	  CAEN_DGTZ_DecodeDPPWaveforms(handle[b], &Events[ch][ev], Waveform); 
-       
-	  // Use waveform data here... 
-	  size = (int)(Waveform->Ns); // Number of samples 
-	  WaveLine = Waveform->Trace1; // First trace (for DPP-PSD it is ALWAYS the Input Signal) 
-	  SaveFunWaveform(b, ch, count+ev, size, WaveLine, outdir); 
-       
-	  /* WaveLine = Waveform->Trace2; // Second Trace (if single trace mode, it is a sequence of zeroes)  */
-	  /* SaveFunWaveform(b, ch, 2, size, WaveLine);  */
-	  /* DoSaveWave[b][ch] = 0;  */
-       
-	  /* DigitalWaveLine = Waveform->DTrace1; // First Digital Trace (DIGITALPROBE1 set with CAEN_DGTZ_SetDPP_PSD_VirtualProbe)  */
-	  /* SaveDigitalProbe(b, ch, 1, size, DigitalWaveLine);  */
-	  /* DoSaveWave[b][ch] = 0;  */
+	//*************************************
+	// Event Elaboration
+	//*************************************
 
-	  /* DigitalWaveLine = Waveform->DTrace2; // Second Digital Trace (DIGITALPROBE2 set with CAEN_DGTZ_SetDPP_PSD_VirtualProbe)  */
-	  /* SaveDigitalProbe(b, ch, 2, size, DigitalWaveLine);  */
-	  /* DoSaveWave[b][ch] = 0;  */
-       
-	  printf("Waveforms saved numb %i for channel %i '\n", count+ev, ch); 
-	  /* } // loop to save waves          */
+	 for(ch=0; ch<MaxNChannels; ch++) {  
+	   printf("Channel %i with size %i \n", ch, Evt->ChSize[ch]);
+	   
+	   if (Evt->ChSize[ch]>0){
+
+	     SaveFunWaveform(b, ch, count[b], Evt->ChSize[ch], Evt->DataChannel[ch], outdir); 
+	     
+	     //	     for(ev=0; ev<Evt->ChSize[ch]; ev++){
+	     //	       printf("%i %i %i %i \n", ch, ev, Evt->ChSize[ch], Evt->DataChannel[ch][ev]);
+	     // }
+	   }
+
+	 }
+
+
+	ret = CAEN_DGTZ_FreeEvent(handle[b],&Evt);
+      }
+
+
+
+      /******************* OLD STUFF ***********/
+
+      /* //ret = DataConsistencyCheck((uint32_t *)buffer, BufferSize/4);  */
+      /* ret |= CAEN_DGTZ_GetDPPEvents(handle[b], buffer, BufferSize, Events, NumEvents);  */
+      /* if (ret) {  */
+      /* 	printf("Data Error: %d\n", ret);  */
+      /* 	goto QuitProgram;  */
+      /* }  */
+      
+      /* /\* Analyze data *\/  */
+      /* for(ch=0; ch<MaxNChannels; ch++) {  */
+	
+      /* 	printf("Channel is %i with events %i \n", ch, NumEvents[ch]); */
+
+      /* 	if (!(Params[b].ChannelMask & (1<<ch)))   */
+      /* 	  continue;   */
+	
+      /* 	/\* Update Histograms *\/  */
+      /* 	for(ev=0; ev<NumEvents[ch]; ev++) {  */
 	  
-	} // loop on events 
-      } // loop on channels 
-      count = count + NumEvents[0];
+      /* 	  TrgCnt[b][ch]++;  */
+      /* 	  /\* Time Tag *\/  */
+      /* 	  if (Events[ch][ev].TimeTag < PrevTime[b][ch])   */
+      /* 	    ExtendedTT[b][ch]++;  */
+      /* 	  PrevTime[b][ch] = Events[ch][ev].TimeTag;  */
+      /* 	  /\* Energy *\/  */
+      /* 	  if ( (Events[ch][ev].ChargeLong > 0) && (Events[ch][ev].ChargeShort > 0)) {  */
+      /* 	    // Fill the histograms  */
+      /* 	    EHistoShort[b][ch][(Events[ch][ev].ChargeShort) & BitMask]++;  */
+      /* 	    EHistoLong[b][ch][(Events[ch][ev].ChargeLong) & BitMask]++;  */
+      /* 	    ECnt[b][ch]++;  */
+      /* 	  }  */
+       
+      /* 	  /\* Get Waveforms (only from 1st event in the buffer) *\/  */
+      /* 	  /\* if ((Params[b].AcqMode != CAEN_DGTZ_DPP_ACQ_MODE_List) && DoSaveWave[b][ch] && (ev == 0)) {  *\/ */
+
+      /* 	  int16_t *WaveLine;  */
+      /* 	  uint8_t *DigitalWaveLine;  */
+      /* 	  CAEN_DGTZ_DecodeDPPWaveforms(handle[b], &Events[ch][ev], Waveform);  */
+       
+      /* 	  // Use waveform data here...  */
+      /* 	  int size = (int)(Waveform->Ns); // Number of samples  */
+      /* 	  printf ("Size of waveform is %i \n", size); */
+      /* 	  WaveLine = Waveform->Trace1; // First trace (for DPP-PSD it is ALWAYS the Input Signal)  */
+      /* 	  SaveFunWaveform(b, ch, count+ev, size, WaveLine, outdir);  */
+       
+      /* 	  printf("Waveforms saved numb %i for channel %i '\n", count+ev, ch);  */
+      /* 	  /\* } // loop to save waves          *\/ */
+	  
+      /* 	} // loop on events  */
+      /* } // loop on channels  */
+      /* count = count + NumEvents[0]; */
+
+
+
     } // loop on boards 
  
   }
@@ -718,15 +610,10 @@ int main(int argc, char *argv[])
     for(b=0; b<MAXNB; b++) {
       CAEN_DGTZ_SWStopAcquisition(handle[b]);
       CAEN_DGTZ_CloseDigitizer(handle[b]);
-      for (ch=0; ch<MaxNChannels; ch++) {
-	free(EHistoShort[b][ch]);
-	free(EHistoLong[b][ch]);
-	free(EHistoRatio[b][ch]);
-      }
     }
     CAEN_DGTZ_FreeReadoutBuffer(&buffer);
-    CAEN_DGTZ_FreeDPPEvents(handle[0], Events);
-    CAEN_DGTZ_FreeDPPWaveforms(handle[0], Waveform);
+    /* CAEN_DGTZ_FreeDPPEvents(handle[0], Events); */
+    /* CAEN_DGTZ_FreeDPPWaveforms(handle[0], Waveform); */
     
     /* printf("\nPress a key to quit\n"); */
     /* getch(); */

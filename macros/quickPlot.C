@@ -1,8 +1,9 @@
-void quickPlot(string filename="outwaves/Waveform_0_0_1.txt"){
+void quickPlot(string filename="/home/lindac/DUNE/DAQtests/Waveform_0_0_1.txt"){
 
   ifstream infile( filename.c_str() );
 
-  double x[10000], y[10000];
+  double *x = new double [1000000];
+  double *y = new double [1000000];
   int ic=0;
   double mean=0;
 
