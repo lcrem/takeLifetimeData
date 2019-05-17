@@ -235,7 +235,7 @@ int main(int argc, char *argv[])
   int BitMask = 0;
   uint64_t CurrentTime, PrevRateTime, ElapsedTime;
   uint32_t NumEvents[MaxNChannels];
-  CAEN_DGTZ_BoardInfo_t           BoardInfo;
+  CAEN_DGTZ_BoardInfo_t BoardInfo;
   CAEN_DGTZ_EventInfo_t eventInfo;
   CAEN_DGTZ_UINT16_EVENT_t *Evt = NULL;
   char * evtptr = NULL;
