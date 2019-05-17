@@ -491,6 +491,12 @@ int main(int argc, char *argv[])
       
       printf(".");
       count[b] +=numEvents;
+
+      FILE *fp;
+      char outname[180];
+      sprintf(outname, "%s/Binary.bin", outdir);
+      fp = fopen (outname, "w");
+
       for (i=0;i<numEvents;i++) {
 	/* Get the Infos and pointer to the event */
 	ret = CAEN_DGTZ_GetEventInfo(handle[b],buffer,BufferSize,i,&eventInfo,&evtptr);
@@ -502,13 +508,7 @@ int main(int argc, char *argv[])
 	// Event Elaboration
 	//*************************************
 
-	FILE *fp;
-	char outname[180];
-	sprintf(outname, "%s/Binary.bin", outdir);
-	fp = fopen (outname, "w");
 	fwrite(evtptr, sizeof(evtptr), 1, fp);
-	fclose(fp);
-
 
 	 for(ch=0; ch<MaxNChannels; ch++) {  
 	   printf("Channel %i with size %i \n", ch, Evt->ChSize[ch]);
@@ -524,9 +524,10 @@ int main(int argc, char *argv[])
 
 	 }
 
-
 	ret = CAEN_DGTZ_FreeEvent(handle[b],&Evt);
       }
+
+      fclose(fp);
 
 
 
