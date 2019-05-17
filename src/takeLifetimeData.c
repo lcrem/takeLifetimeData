@@ -101,11 +101,11 @@ int ProgramDigitizer(int handle, DigitizerParams_t Params, DAQSettings_t set)
       printf ("Channel %i is enabled \n", i);
       // Set the number of samples for each waveform 
       //for x725 and x730 Recordlength is common to paired channels (you can set different RL for different channel pairs)
-      if (i % 2 == 0)
-	ret |= CAEN_DGTZ_SetRecordLength(handle, Params.RecordLength, i);
+      ret |= CAEN_DGTZ_SetRecordLength(handle, Params.RecordLength, i);
 
       // Set a DC offset to the input signal to adapt it to digitizer's dynamic range
-      ret |= CAEN_DGTZ_SetChannelDCOffset(handle, i, 0x8000);
+      //      ret |= CAEN_DGTZ_SetChannelDCOffset(handle, i, 0x8000);
+      ret |= CAEN_DGTZ_SetChannelDCOffset(handle, i, 0x7FFF);
            
       
       ret |= CAEN_DGTZ_SetChannelTriggerThreshold(handle,i,set.thr);                  /* Set selfTrigger threshold */
@@ -286,7 +286,7 @@ int main(int argc, char *argv[])
     }
     
         
-    Params[b].IOlev = CAEN_DGTZ_IOLevel_TTL;
+    Params[b].IOlev = CAEN_DGTZ_IOLevel_NIM; //CAEN_DGTZ_IOLevel_TTL;
     /****************************\
      *  Acquisition parameters    *
         \****************************/
@@ -424,7 +424,7 @@ int main(int argc, char *argv[])
 
 
   } 
-  AcqRun = 1; 
+  AcqRun = 1;
   printf("%s %i \n", __FUNCTION__, __LINE__);
 
   sleep(1);
@@ -501,6 +501,14 @@ int main(int argc, char *argv[])
 	//*************************************
 	// Event Elaboration
 	//*************************************
+
+	FILE *fp;
+	char outname[180];
+	sprintf(outname, "%s/Binary.bin", outdir);
+	fp = fopen (outname, "w");
+	fwrite(evtptr, sizeof(evtptr), 1, fp);
+	fclose(fp);
+
 
 	 for(ch=0; ch<MaxNChannels; ch++) {  
 	   printf("Channel %i with size %i \n", ch, Evt->ChSize[ch]);
