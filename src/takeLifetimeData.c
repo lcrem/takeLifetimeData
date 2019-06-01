@@ -508,7 +508,7 @@ int main(int argc, char *argv[])
 	// Event Elaboration
 	//*************************************
 
-	fwrite(evtptr, sizeof(evtptr), 1, fp);
+	fwrite(Evt, sizeof(Evt), 1, fp);
 
 	 for(ch=0; ch<MaxNChannels; ch++) {  
 	   printf("Channel %i with size %i \n", ch, Evt->ChSize[ch]);
