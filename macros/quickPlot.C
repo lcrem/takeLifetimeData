@@ -1,4 +1,4 @@
-void quickPlot(string filename="/home/lindac/DUNE/DAQtests/Waveform_0_0_1.txt"){
+void quickPlot(string filename="/home/lindac/DUNE/DAQtests/TEMP/Waveform_0_4_1.txt"){
 
   ifstream infile( filename.c_str() );
 
