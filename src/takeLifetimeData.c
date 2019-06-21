@@ -33,9 +33,85 @@
    you can find this file in the src directory */
 #include "Functions.h"
 
+#include "signal.h"
+
+
+#include "TFile.h" 
+#include "TGraph.h" 
+#include "TAxis.h" 
+#include "TCanvas.h"
+#include "TPaveText.h"
+#include "TMath.h"
+#include "TSystem.h"
+
+
 /* ###########################################################################
  *  Functions
  *  ########################################################################### */
+
+bool ABORT_EARLY=false;
+
+double digDeltaT = 2.;      // 2ns delta t 
+double digADCconv = 0.122;  // ADC conversion
+
+void addToCanvas(int ch, char *outdir, TGraph gavg, char *elog, TCanvas &c){
+
+  TGraph *g1 = new TGraph(gavg.GetN(), gavg.GetX(), gavg.GetY());
+  g1->SetName(Form("g_%d", ch));
+
+  TPaveText *pav = new TPaveText(0.25, 0.85, 0.99, 0.95, "ndc");
+  pav->SetFillColor(kWhite);
+  pav->AddText(elog);
+
+  float min = 0;
+
+  switch(ch){
+  case 0:
+    g1->SetTitle("Photodiode;Time [ns];Amplitude [mV]");
+    g1->Draw("Al");
+    pav->Draw("same");
+    c.Print(Form("%s/Photodiode.png", outdir));
+    break;
+  case 1:
+    g1->SetTitle("PrM1 Middle, Raw Averages;Time [ns];Amplitude [mV]");
+    min = TMath::MinElement(g1->GetN(), g1->GetY());
+    g1->GetYaxis()->SetRangeUser(min, -min);
+    g1->Draw("Al");
+    break;
+  case 2:
+    g1->Draw("l");
+    pav->Draw("same");
+    c.Print(Form("%s/PurityMonitor1_rawAvg.png", outdir));
+    break;
+  case 4:
+    g1->SetTitle("PrM2 Bottom, Raw Averages;Time [ns];Amplitude [mV]");
+    min = TMath::MinElement(g1->GetN(), g1->GetY());
+    g1->GetYaxis()->SetRangeUser(min, -min);
+    g1->Draw("Al");
+    break;
+  case 5:
+    g1->Draw("l");
+    pav->Draw("same");
+    c.Print(Form("%s/PurityMonitor2_rawAvg.png", outdir));
+    break;
+    
+  }
+  c.Draw();
+  c.Update();
+  gSystem->ProcessEvents();
+
+}
+
+
+void interrupt_signal_handler(int sig){
+
+  signal(sig, SIG_IGN);
+  ABORT_EARLY=true;
+  return;
+
+}
+
+
 
 /* --------------------------------------------------------------------------------------------------------- */
 /*! \fn      int ProgramDigitizer(int handle, DigitizerParams_t Params, DAQSettings_t set)
@@ -90,7 +166,7 @@ int ProgramDigitizer(int handle, DigitizerParams_t Params, DAQSettings_t set)
      In this example the sync is disabled */
   ret |= CAEN_DGTZ_SetRunSynchronizationMode(handle, CAEN_DGTZ_RUN_SYNC_Disabled);
  
-  ret |= CAEN_DGTZ_SetMaxNumEventsBLT(handle,1);  /* Set the max number of events to transfer in a sigle readout */
+  ret |= CAEN_DGTZ_SetMaxNumEventsBLT(handle,25);  /* Set the max number of events to transfer in a sigle readout */
 
   // Set the DPP specific parameters for the channels in the given channelMask
   //  ret |= CAEN_DGTZ_SetDPPParameters(handle, Params.ChannelMask, &DPPParams);
@@ -135,6 +211,7 @@ int main(int argc, char *argv[])
 
   int MAX_WAVEFORMS=10;
   char outdir[1000];
+  char outname[180]; 
   char configFile[1000];
   char elog[10000];
 
@@ -143,8 +220,11 @@ int main(int argc, char *argv[])
   sprintf(outdir, "tmpout");
   if((argc==1)){ 
     printf("Usage : %s -i (configFile) -o (outdir) -n (MAX_WAVEFORMS) -m (ELOGMESSAGE)\n", argv[0]); 
-    printf("All inputs are optional so I'm just going to use my default ones\n");
-    printf("if MAX_WAVEFORMS==-1 do calibration\n\n"); 
+    printf("You need to set at least the number of waveforms\n");
+    printf("If you want software triggers use the flag -s 1\n");
+    printf("If you want to perform temperature calibration use flag -c 1 \n"); 
+    printf("If you want to save rootfiles directly use the flag -r 1 \n\n");
+    return -1;
   }
   
   char clswitch; // command line switch
@@ -152,8 +232,12 @@ int main(int argc, char *argv[])
   char tmpout[200];
   tmpout[0] = 0;
 
+  bool softTrigger = false;
+  bool doCalibration = false;
+  bool saveRoot = false;
+
   if (argc>1) {
-    while ((clswitch = getopt(argc, argv, "i:o:n:m:")) != EOF) {
+    while ((clswitch = getopt(argc, argv, "i:o:n:m:s:c:r:")) != EOF) {
       switch(clswitch) {
       case 'n':
         tmpmax=atoi(optarg);
@@ -171,11 +255,24 @@ int main(int argc, char *argv[])
 	sprintf(elog, "%s", optarg);
 	printf("Elog message: %s\n", elog);
 	break;
+      case 's':
+	printf("Using software triggers!!!!\n");
+	softTrigger=true;
+	break;
+      case 'c':
+	printf("Performing calibration\n");
+	doCalibration=true;
+	break;
+      case 'r':
+	printf("Saving rootfiles\n");
+	saveRoot=true;
+	break;
       } // end switch
     } // end while
   } // end if arg>1
+ 
 
-  // Function that reads the settings 
+ // Function that reads the settings 
   DAQSettings_t set = readDAQSettings(configFile);
   printDAQSettings(set);
   MAX_WAVEFORMS=set.nmax;
@@ -183,14 +280,28 @@ int main(int argc, char *argv[])
 
   if (tmpmax!=0) MAX_WAVEFORMS=tmpmax;
   if (tmpout[0] != 0)    sprintf(outdir, "%s", tmpout);
-  
+
+
+  // Get last run number
+  int run=0;
+  FILE *frun;
+  if (( frun = fopen(Form("%s/LastRun", outdir), "r")) ){
+    fscanf(frun,"%d", &run);
+    printf("The last run number was %d\n", run);
+    fclose(frun);
+  }
+  run=run+1;
+  FILE *frunnew;
+  frunnew = fopen(Form("%s/LastRun", outdir), "w");
+  fprintf(frunnew, "%d", run);
+  fclose(frunnew);
+
+  sprintf(outdir, "%s/Run%03d", outdir, run);
+    
   // Make sure output directory exhists
   char makedircmd[1000]; 
   sprintf(makedircmd, "mkdir -p %s", outdir); 
   system(makedircmd); 
-
-
-  printf("Nwavef %i and outdir %s\n", MAX_WAVEFORMS, outdir);
 
   /* The following variable is the type returned from most of CAENDigitizer
      library functions and is used to check if there was an error in function
@@ -223,7 +334,8 @@ int main(int argc, char *argv[])
   int handle[MAXNB];
 
   /* Other variables */
-  int i, b, ch, ev;
+  int i, b, ev;
+  int ch=0;
   int Quit=0;
   int AcqRun = 0;
   uint32_t AllocatedSize, BufferSize;
@@ -238,10 +350,14 @@ int main(int argc, char *argv[])
   CAEN_DGTZ_BoardInfo_t BoardInfo;
   CAEN_DGTZ_EventInfo_t eventInfo;
   CAEN_DGTZ_UINT16_EVENT_t *Evt = NULL;
+
+  float *MeanDataChannel = new float [8000000]; 
+
   char * evtptr = NULL;
   int count[MAXNB];
 
   uint32_t temp;
+  int countBf0=0;
 
   memset(DoSaveWave, 0, MAXNB*MaxNChannels*sizeof(int));
   for (i=0; i<MAXNBITS; i++)
@@ -278,7 +394,7 @@ int main(int argc, char *argv[])
     //Params[b].LinkType = CAEN_DGTZ_USB;  // Link Type (CAEN_DGTZ_PCIE_OpticalLink for A3818)
     //Params[b].VMEBaseAddress = 0x32110000;  // VME Base Address (only for VME bus access; must be 0 for direct connection (CONET or USB)
 
-    uint32_t mask;
+    uint32_t mask = 0;
     for (ch=0; ch<MaxNChannels; ch++){
       if (set.chEnabled[ch]==1){
 	mask |= 1<<ch ;
@@ -297,6 +413,9 @@ int main(int argc, char *argv[])
     Params[b].PulsePolarity = CAEN_DGTZ_PulsePolarityPositive; // Pulse Polarity (this parameter can be individual)
 
   } 
+
+
+  signal(SIGINT, interrupt_signal_handler);
 
 
   /* *************************************************************************************** */
@@ -372,7 +491,7 @@ int main(int argc, char *argv[])
   /* Allocate memory for the waveforms */
   // ret |= CAEN_DGTZ_MallocDPPWaveforms(handle[0], &Waveform, &AllocatedSize);
 
-  printf("Allocated size %i and size of it %i\n", AllocatedSize, sizeof(AllocatedSize));
+  //  printf("Allocated size %i and size of it %i\n", AllocatedSize, sizeof(AllocatedSize));
 
  
   if (ret) {
@@ -399,7 +518,7 @@ int main(int argc, char *argv[])
 
   PrevRateTime = get_time();
   AcqRun = 0;
-  printf("%s %i \n", __FUNCTION__, __LINE__);
+
   for(b=0; b<MAXNB; b++) { 
 
     CAEN_DGTZ_ClearData(handle[b]); 
@@ -424,17 +543,18 @@ int main(int argc, char *argv[])
 
 
   } 
+
+  {
+
+
   AcqRun = 1;
-  printf("%s %i \n", __FUNCTION__, __LINE__);
 
   sleep(1);
-
-
 
   // If MAX_WAVEFORMS==-1 perform calibration
   // Calibration should be every time the digitiser is turned on
   // We should wait a few seconds for the temperatures to stabilise
-  if (MAX_WAVEFORMS==-1){
+  if (doCalibration){
     
     printf("Waiting 10 seconds for temperature to stabilise\n");
     sleep(10);
@@ -449,27 +569,80 @@ int main(int argc, char *argv[])
     
     for (b = 0; b < MAXNB; b++) 
       CAEN_DGTZ_Calibrate(handle[b]); 
-    printf("\nADC calibration done\n"); 
-    goto QuitProgram;    
+    printf("\nADC calibration done\n");     goto QuitProgram;    
   }
 
+  int digMeanNum = 100;
+
+ 
+  FILE *felog;
+  sprintf(outname, "%s/Elog.txt", outdir);
+  felog = fopen(outname, "w");
+  fprintf(felog, "%s\n", elog);
+  fclose(felog);
+
+  FILE *fp; 
+  sprintf(outname, "%s/Binary.bin", outdir); 
+  fp = fopen (outname, "wb"); 
+   
+  char rootout[200];
+  TFile *fout;
+  if (saveRoot){
+    sprintf(rootout, "%s/RawWaveforms.root", outdir);
+    fout = new TFile(rootout, "recreate");
+    fout->SetCompressionLevel(0);
+  }
+  
+  TFile *favg[MaxNChannels];
+  TDirectory *avg25[MaxNChannels];
+  TDirectory *avg50[MaxNChannels];
+  TDirectory *avg100[MaxNChannels];
+  TDirectory *avg200[MaxNChannels];
+  for (ch=0; ch<MaxNChannels; ch++){
+    if (set.chEnabled[ch]==0) continue;
+    sprintf(rootout, "%s/RawAverages_ch%d.root", outdir, ch);
+    favg[ch]   = new TFile(rootout, "recreate");
+    avg25[ch]  = favg[ch]->mkdir("avg25");
+    avg50[ch]  = favg[ch]->mkdir("avg50");
+    avg100[ch] = favg[ch]->mkdir("avg100");
+    avg200[ch] = favg[ch]->mkdir("avg200");
+  }
   
 
-  int countBf0=0;
+
+  TGraph g;
+
+  char goutname[100];
+  int ip = 0;
+  double mean = 0.;
+  /* Read data from the boards */ 
+
+  int numToAvg=25;
+
+  for(b=0; b<MAXNB; b++) { 
+    count[b]=0;
+
+    memset(MeanDataChannel, 0, sizeof(MeanDataChannel)*sizeof(float));
+
+    while(count[b] < MAX_WAVEFORMS){
 
 
+      if (ABORT_EARLY){
+	printf("Gracefully aborting early\n");
+	goto QuitProgram;
+      }
 
-    /* Read data from the boards */ 
-    for(b=0; b<MAXNB; b++) { 
-      count[b]=0;
+      if (softTrigger){
 
-      while(count[b] < MAX_WAVEFORMS){
-
-	//printf("Sending software trigger now?\n");  
+	//	sleep(1);
+	  
+	printf("Sending software trigger now?\n");  
 	// just test  
-	//	CAEN_DGTZ_SendSWtrigger(handle[b]); // Send a software trigger to each board   
+	CAEN_DGTZ_SendSWtrigger(handle[b]); // Send a software trigger to each board   
 
+      }
 
+	
       /* Read data from the board */ 
       ret = CAEN_DGTZ_ReadData(handle[b], CAEN_DGTZ_SLAVE_TERMINATED_READOUT_MBLT, buffer, &BufferSize); 
       if (ret) { 
@@ -478,26 +651,24 @@ int main(int argc, char *argv[])
       } 
       if (BufferSize == 0){
  	countBf0 = countBf0 + 1;
-	printf("Got nothing\n");
+	printf("x");
 	/* if (countBf0>10000) goto QuitProgram; */
 	continue; 
       }
       Nb += BufferSize; 
-      printf ("Got something \n");
+      //      printf ("Got something \n");
 
       /* The buffer red from the digitizer is used in the other functions to get the event data
 	 The following function returns the number of events in the buffer */
       ret |= CAEN_DGTZ_GetNumEvents(handle[b],buffer,BufferSize,&numEvents);
       
-      printf(".");
-      count[b] +=numEvents;
-
-      FILE *fp;
-      char outname[180];
-      sprintf(outname, "%s/Binary.bin", outdir);
-      fp = fopen (outname, "w");
+      //      printf(".");
+      //      printf(" %d out of %d and num events is %d \n", count[b], MAX_WAVEFORMS, numEvents);
+      
 
       for (i=0;i<numEvents;i++) {
+	printf(".");
+	
 	/* Get the Infos and pointer to the event */
 	ret = CAEN_DGTZ_GetEventInfo(handle[b],buffer,BufferSize,i,&eventInfo,&evtptr);
 	
@@ -508,90 +679,111 @@ int main(int argc, char *argv[])
 	// Event Elaboration
 	//*************************************
 
-	fwrite(evtptr, sizeof(evtptr), 1, fp);
+	//	fwrite(Evt.Chsize, sizeof(Evt.ChSize), 1, fp);
 
-	 for(ch=0; ch<MaxNChannels; ch++) {  
-	   printf("Channel %i with size %i \n", ch, Evt->ChSize[ch]);
+	for(ch=0; ch<MaxNChannels; ++ch) {  
+	  //	  printf("Channel %i with size %i \n", ch, Evt->ChSize[ch]);
 	   
-	   if (Evt->ChSize[ch]>0){
+	  if (Evt->ChSize[ch]>0){
 
-	     SaveFunWaveform(b, ch, count[b], Evt->ChSize[ch], Evt->DataChannel[ch], outdir); 
-	     
-	     //	     for(ev=0; ev<Evt->ChSize[ch]; ev++){
-	     //	       printf("%i %i %i %i \n", ch, ev, Evt->ChSize[ch], Evt->DataChannel[ch][ev]);
-	     // }
-	   }
+	    TrgCnt[b][ch]++;  
 
-	 }
+	    fwrite(&ch, sizeof(int), 1, fp);
+
+	    fwrite(&Evt->ChSize[ch], sizeof(uint32_t), 1, fp);
+
+	    //    printf("Just in case %i %i \n", ch, Evt->ChSize[ch]);
+
+	    fwrite(Evt->DataChannel[ch], Evt->ChSize[ch]*sizeof(uint16_t), 1, fp);
+
+	    //	    SaveFunWaveform(b, ch, count[b], Evt->ChSize[ch], Evt->DataChannel[ch], outdir); 
+	    
+	    for (ip=0; ip<Evt->ChSize[ch]; ip++){
+	      MeanDataChannel[ch*set.length+ip] += Evt->DataChannel[ch][ip]*digADCconv/(numToAvg*1.0);;
+	    }
+
+	    if (saveRoot) {
+	      mean=0.;
+	      g.Set(Evt->ChSize[ch]);
+	      for (ip=0; ip<Evt->ChSize[ch]; ip++){
+		g.GetX()[ip] = ip*digDeltaT;
+		g.GetY()[ip] = Evt->DataChannel[ch][ip]*digADCconv;
+		if (ip<digMeanNum) mean += Evt->DataChannel[ch][ip]*digADCconv;
+		//y[i] = Evt->DataChannel[ch][i];
+		//      cout << x[i] << " " << y[i] << endl;                                                                                            
+	      }
+
+	      mean = mean*1.0/digMeanNum;
+	      for (ip=0; ip<Evt->ChSize[ch]; ip++){
+		g.GetY()[ip] = g.GetY()[ip] - mean;
+	      }
+
+	      fout->cd();
+	      sprintf(goutname, "g_ch%d_%d", ch, TrgCnt[b][ch]); 
+	      g.Write(goutname); 
+	    }
+
+	    //	     for(ev=0; ev<Evt->ChSize[ch]; ev++){
+	    //	       printf("%i %i %i %i \n", ch, ev, Evt->ChSize[ch], Evt->DataChannel[ch][ev]);
+	    // }
+	    //	    delete g;
+	  }
+
+	}
 
 	ret = CAEN_DGTZ_FreeEvent(handle[b],&Evt);
-      }
 
-      fclose(fp);
-
-
-
-      /******************* OLD STUFF ***********/
-
-      /* //ret = DataConsistencyCheck((uint32_t *)buffer, BufferSize/4);  */
-      /* ret |= CAEN_DGTZ_GetDPPEvents(handle[b], buffer, BufferSize, Events, NumEvents);  */
-      /* if (ret) {  */
-      /* 	printf("Data Error: %d\n", ret);  */
-      /* 	goto QuitProgram;  */
-      /* }  */
       
-      /* /\* Analyze data *\/  */
-      /* for(ch=0; ch<MaxNChannels; ch++) {  */
-	
-      /* 	printf("Channel is %i with events %i \n", ch, NumEvents[ch]); */
+	if (TrgCnt[b][0]%numToAvg==0){
+	 
+	  for (ch=0; ch<MaxNChannels; ch++){
+	    
+	    if (set.chEnabled[ch]==0) continue;
+	    
+	    favg[ch]->cd();
+	    avg25[ch]->cd();
 
-      /* 	if (!(Params[b].ChannelMask & (1<<ch)))   */
-      /* 	  continue;   */
-	
-      /* 	/\* Update Histograms *\/  */
-      /* 	for(ev=0; ev<NumEvents[ch]; ev++) {  */
-	  
-      /* 	  TrgCnt[b][ch]++;  */
-      /* 	  /\* Time Tag *\/  */
-      /* 	  if (Events[ch][ev].TimeTag < PrevTime[b][ch])   */
-      /* 	    ExtendedTT[b][ch]++;  */
-      /* 	  PrevTime[b][ch] = Events[ch][ev].TimeTag;  */
-      /* 	  /\* Energy *\/  */
-      /* 	  if ( (Events[ch][ev].ChargeLong > 0) && (Events[ch][ev].ChargeShort > 0)) {  */
-      /* 	    // Fill the histograms  */
-      /* 	    EHistoShort[b][ch][(Events[ch][ev].ChargeShort) & BitMask]++;  */
-      /* 	    EHistoLong[b][ch][(Events[ch][ev].ChargeLong) & BitMask]++;  */
-      /* 	    ECnt[b][ch]++;  */
-      /* 	  }  */
-       
-      /* 	  /\* Get Waveforms (only from 1st event in the buffer) *\/  */
-      /* 	  /\* if ((Params[b].AcqMode != CAEN_DGTZ_DPP_ACQ_MODE_List) && DoSaveWave[b][ch] && (ev == 0)) {  *\/ */
+	    g.Set(set.length);
 
-      /* 	  int16_t *WaveLine;  */
-      /* 	  uint8_t *DigitalWaveLine;  */
-      /* 	  CAEN_DGTZ_DecodeDPPWaveforms(handle[b], &Events[ch][ev], Waveform);  */
-       
-      /* 	  // Use waveform data here...  */
-      /* 	  int size = (int)(Waveform->Ns); // Number of samples  */
-      /* 	  printf ("Size of waveform is %i \n", size); */
-      /* 	  WaveLine = Waveform->Trace1; // First trace (for DPP-PSD it is ALWAYS the Input Signal)  */
-      /* 	  SaveFunWaveform(b, ch, count+ev, size, WaveLine, outdir);  */
-       
-      /* 	  printf("Waveforms saved numb %i for channel %i '\n", count+ev, ch);  */
-      /* 	  /\* } // loop to save waves          *\/ */
-	  
-      /* 	} // loop on events  */
-      /* } // loop on channels  */
-      /* count = count + NumEvents[0]; */
+	    mean=0.;
 
+	    for (ip=0; ip<set.length; ip++){
+	      g.GetX()[ip] = ip*digDeltaT;
+	      g.GetY()[ip] = MeanDataChannel[ch*set.length+ip];
+	      if (ip<digMeanNum) mean += g.GetY()[ip];
+	    }
+
+	    mean = mean*1.0/digMeanNum;
+
+	    for (ip=0; ip<set.length; ip++){
+	      g.GetY()[ip]-=mean;
+	    }
+	    
+	    sprintf(goutname, "gavg25_%d", TrgCnt[b][ch]/numToAvg-1);  
+	    g.Write(goutname);
+	    
+	    for (ip=0; ip<set.length; ip++){
+              MeanDataChannel[ch*set.length+ip]=0.;
+	    }
+	    
+	  } 
+	 
+	  //	  memset(MeanDataChannel, 0., sizeof(MeanDataChannel)*sizeof(float)); 
+	  printf("Done avg %d / %d \n", TrgCnt[b][0], MAX_WAVEFORMS);
+	}
+
+      }
+	count[b] +=numEvents;
+
+    }
 
 
-    } // loop on boards 
+  }// loop on boards 
  
-  }
+  
  
- 
-  /* Calculate throughput and trigger rate (every second) */ 
+
+   /* Calculate throughput and trigger rate (every second) */ 
   CurrentTime = get_time(); 
   ElapsedTime = CurrentTime - PrevRateTime; /* milliseconds */ 
   if (ElapsedTime > 1000) { 
@@ -602,7 +794,7 @@ int main(int argc, char *argv[])
       printf("\nBoard %d:\n",b); 
       for(i=0; i<MaxNChannels; i++) { 
 	if (TrgCnt[b][i]>0) 
-	  printf("\tCh %d:\tTrgRate=%.2f KHz\t%\n", b*8+i, (float)TrgCnt[b][i]/(float)ElapsedTime); 
+	  printf("\tCh %d:\tTrgRate=%.2f Hz\t%\n", b*8+i, (float)TrgCnt[b][i]*1000./(float)ElapsedTime); 
 	else 
 	  printf("\tCh %d:\tNo Data\n", i); 
 	TrgCnt[b][i]=0; 
@@ -611,21 +803,135 @@ int main(int argc, char *argv[])
     Nb = 0; 
     PrevRateTime = CurrentTime; 
     printf("\n\n"); 
-  } 
+  }
   
- 
- QuitProgram:
-/* stop the acquisition, close the device and free the buffers   */
-    for(b=0; b<MAXNB; b++) {
-      CAEN_DGTZ_SWStopAcquisition(handle[b]);
-      CAEN_DGTZ_CloseDigitizer(handle[b]);
-    }
-    CAEN_DGTZ_FreeReadoutBuffer(&buffer);
-    /* CAEN_DGTZ_FreeDPPEvents(handle[0], Events); */
-    /* CAEN_DGTZ_FreeDPPWaveforms(handle[0], Waveform); */
+  
+
+
+  if (saveRoot){
+    fout->Close();
+    delete fout;
+  }
+
+  fclose(fp);
+  
+
+  int ig=0;
+
+  TGraph gavg;
+  TGraph *gt[5];
+
+  TCanvas c;
+
+  printf("Doing averages\n");
+
+  for (ch=0; ch<MaxNChannels; ch++){
+    if (set.chEnabled[ch]==0) continue;
     
-    /* printf("\nPress a key to quit\n"); */
-    /* getch(); */
-    return ret;
+    favg[ch]->cd();
+
+    // Doing 50 averages
+    for (ig=0; ig<(MAX_WAVEFORMS/50); ig++){
+      gt[0] = (TGraph*)favg[ch]->Get(Form("avg25/gavg25_%d", ig*2));
+      gt[1] = (TGraph*)favg[ch]->Get(Form("avg25/gavg25_%d", ig*2+1));
+      gavg.Set(set.length);
+      for (ip=0; ip<set.length; ip++){ 
+	gavg.GetX()[ip] = gt[0]->GetX()[ip];
+	gavg.GetY()[ip] = 0.5*(gt[0]->GetY()[ip]+gt[1]->GetY()[ip]);
+      }
+      favg[ch]->cd();
+      avg50[ch]->cd();
+      gavg.Write(Form("gavg50_%d", ig));
+      
+    }
+
+    // Doing 100 averages
+    for (ig=0; ig<(MAX_WAVEFORMS/100); ig++){
+      gt[0] = (TGraph*)favg[ch]->Get(Form("avg50/gavg50_%d", ig*2));
+      gt[1] = (TGraph*)favg[ch]->Get(Form("avg50/gavg50_%d", ig*2+1));
+      gavg.Set(set.length);
+      for (ip=0; ip<set.length; ip++){ 
+	gavg.GetX()[ip] = gt[0]->GetX()[ip];
+	gavg.GetY()[ip] = 0.5*(gt[0]->GetY()[ip]+gt[1]->GetY()[ip]);
+      }
+      favg[ch]->cd();
+      avg100[ch]->cd();
+      gavg.Write(Form("gavg100_%d", ig));
+      
+      if (MAX_WAVEFORMS==100)  addToCanvas(ch, outdir, gavg, elog, c);
+      
+    }
+
+    // Doing 50 averages
+    for (ig=0; ig<(MAX_WAVEFORMS/200); ig++){
+      gt[0] = (TGraph*)favg[ch]->Get(Form("avg100/gavg100_%d", ig*2));
+      gt[1] = (TGraph*)favg[ch]->Get(Form("avg100/gavg100_%d", ig*2+1));
+      gavg.Set(set.length);
+      for (ip=0; ip<set.length; ip++){ 
+	gavg.GetX()[ip] = gt[0]->GetX()[ip];
+	gavg.GetY()[ip] = 0.5*(gt[0]->GetY()[ip]+gt[1]->GetY()[ip]);
+      }
+      favg[ch]->cd();
+      avg200[ch]->cd();
+      gavg.Write(Form("gavg200_%d", ig));
+      
+    }
+
+    favg[ch]->cd();
+
+    if (MAX_WAVEFORMS==1000){
+      for (int ii=0; ii<5; ii++) gt[ii] = (TGraph*)favg[ch]->Get(Form("avg200/gavg200_%d", ii));
+      for (ip=0; ip<set.length; ip++){
+        gavg.GetX()[ip] = gt[0]->GetX()[ip];
+        gavg.GetY()[ip] = 0.;
+	for (int ii=0; ii<5; ii++) gavg.GetY()[ip] += gt[ii]->GetY()[ip] ;
+	gavg.GetY()[ip] = gavg.GetY()[ip]/5.;
+      }
+      gavg.Write("justAvg");
+
+      addToCanvas(ch, outdir, gavg, elog, c);
+    }
+
+
+
+    
+    favg[ch]->Close(); 
+    printf(".");
+    delete favg[ch]; 
+  }
+  
+  printf("Saved everything in %s\n", outdir);
+
+
+  }
+  
+
+
+ QuitProgram:
+
+  printf("Quitting digitiser stuff\n");
+  /* stop the acquisition, close the device and free the buffers   */
+  for(b=0; b<MAXNB; b++) {
+    CAEN_DGTZ_SWStopAcquisition(handle[b]);
+    CAEN_DGTZ_CloseDigitizer(handle[b]);
+  }
+  CAEN_DGTZ_FreeReadoutBuffer(&buffer);
+
+  /* if (!doCalibration){ */
+  /*   // Now let's compress the file  */
+  /*   char zipfilecmd[1000];   */
+  /*   sprintf(zipfilecmd, "gzip -f %s", outname);   */
+  /*   printf("zipping binary file\n");  */
+  /*   system(zipfilecmd);   */
+  /*   printf("All done!\n");  */
+  /* } */
+
+  /* CAEN_DGTZ_FreeDPPEvents(handle[0], Events); */
+  /* CAEN_DGTZ_FreeDPPWaveforms(handle[0], Waveform); */
+    
+  /* printf("\nPress a key to quit\n"); */
+  /* getch(); */
+  return ret;
 }
     
+

@@ -3,7 +3,7 @@ kbhit() and getch() for Linux/UNIX
 Chris Giese <geezer@execpc.com>	http://my.execpc.com/~geezer
 */
 
-#ifdef linux
+/* #ifdef linux */
     #include <sys/time.h> /* struct timeval, select() */
     #include <termios.h> /* tcgetattr(), tcsetattr() */
     #include <stdlib.h> /* atexit(), exit() */
@@ -90,9 +90,9 @@ int kbhit()
 }
 
 
-#else  // Windows
+/* #else  // Windows */
 
-    #include <conio.h>
-#define CLEARSCR "cls"
-#endif
+/*     #include <conio.h> */
+/* #define CLEARSCR "cls" */
+/* #endif */
 
