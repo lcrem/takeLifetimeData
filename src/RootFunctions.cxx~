@@ -1,0 +1,9 @@
+#include "RootFunctions.h"
+#include "File.h"
+
+
+void tempFunction(double *c, string a){
+
+  TFile *f = new TFile(a.c_str(), "recreate");
+}
+

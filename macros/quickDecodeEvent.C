@@ -1,50 +1,84 @@
-
-#define MAX_UINT16_CHANNEL_SIZE     (64)
-
-typedef struct 
-{
-    uint32_t            ChSize[MAX_UINT16_CHANNEL_SIZE]; // the number of samples stored in DataChannel array  
-    uint16_t            *DataChannel[MAX_UINT16_CHANNEL_SIZE]; // the array of ChSize samples
-} CAEN_DGTZ_UINT16_EVENT_t;
+double deltat = 2.;      // 2ns delta t
+double ADCconv = 0.122;  // ADC conversion
+int meanNum = 30;        // Use the first 30 samples to calculate the baseline
 
 
-
-void quickDecodeEvent(){
-
-  CAEN_DGTZ_UINT16_EVENT_t *Evt = NULL;
+void quickDecodeEvent(string folder="/home/lindac/DUNE/DAQtests/TEMP/"){
 
   int ch;
 
   int MaxNChannels=8;
 
+  uint32_t size;
 
   FILE *fp;
+
   char inname[180];
-  cout << __LINE__ << endl;
 
-  sprintf(inname, "/home/lindac/DUNE/DAQtests/TestBinaryOutput/Binary.bin");
-  cout << __LINE__ << endl;
-  fp = fopen (inname, "r");
-  cout << __LINE__ << endl;
+  // Unzip binary file
+  char unzipfilecmd[1000];
+  sprintf(unzipfilecmd, "gzip -d %s/Binary.bin.gz", folder.c_str());
+  system(unzipfilecmd);
+  sprintf(inname, "%s/Binary.bin", folder.c_str());
+  fp = fopen (inname, "rb");
 
-  fread(Evt, sizeof(*Evt), 1, fp);
+  ch = -1;
 
-  cout << __LINE__ << endl;
+  int count = 0;
 
-  for(ch=0; ch<MaxNChannels; ch++) {  
-    cout << __LINE__ << endl;
-    printf("Channel %i with size %i \n", ch, Evt->ChSize[ch]);
-    
-    if (Evt->ChSize[ch]>0){
-      cout << __LINE__ << endl;
-      
-      for(int ev=0; ev<Evt->ChSize[ch]; ev++){
-	cout << __LINE__ << endl;
-	printf("%i %i %i %i \n", ch, ev, Evt->ChSize[ch], Evt->DataChannel[ch][ev]);
-      }
+  TFile *fout = new TFile(Form("%s/RootfileFromBinary.root", folder.c_str()), "recreate");
+
+  int num[8] = { 0, 0, 0, 0, 0 ,0 ,0 ,0};
+  double *x = new double [2000000];
+  double *y = new double [2000000];
+
+  uint16_t DataChannel[2000000];
+     
+  while ( !feof(fp) ) {
+     
+    fread(&ch, sizeof(ch), 1, fp);
+    fread(&size, sizeof(size), 1, fp);
+     
+    // cout << __LINE__ << endl;
+    double mean=0;
+
+    printf("Channel %i, size %i, number %i  \n", ch, size, num[ch]);
+    fread(&DataChannel, sizeof(uint16_t)*size, 1, fp);
+    cout << DataChannel[0] << " " << DataChannel[100] << " " << DataChannel[2000] << endl;
+    // cout << __LINE__ << endl;
+
+    for (int i=0; i<size; i++){
+      x[i] = i*deltat;
+      y[i] = DataChannel[i]*1.0;
+      if (i<meanNum) mean += y[i];
+
+      //      cout << x[i] << " " << y[i] << endl;
     }
+
+    mean = mean*1.0/meanNum;
+    for (int i=0; i<size; i++){
+      y[i]-=mean;
+      y[i]*=ADCconv;
+    }
+    //     for (int i=0; i<size; i++) printf("%i ", DataChannel[i] );
+    //    printf("\n");
     
+    num[ch]++;
+
+    TGraph *g = new TGraph(size, x, y);     
+    g->Write(Form("g_ch%i_%i", ch, num[ch]));
+
+    delete g;
+
+
   }
+
+  fout->Close();
+
+  cout << "Wrote everything in " << folder << endl;
+∑
+
+
 }
 
 
