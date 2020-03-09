@@ -147,7 +147,6 @@ int findLine(char line[128], char tofind[128], char fout[128]){
 }
 
 void printDAQSettings(DAQSettings_t set){
-  
   printf("Number of waveforms : %i \n", set.nmax);  
   printf("Output folder : %s \n", set.outfolder); 
   printf("Record Length : %i \n", set.length);

@@ -45,6 +45,7 @@
 #include "TSystem.h"
 #include "FFTtools.h"
 
+
 /* ###########################################################################
  *  Functions
  *  ########################################################################### */
@@ -288,6 +289,7 @@ int main(int argc, char *argv[])
   if (doCalibration){
     sprintf(outdir, "%s/Calibration/", outdir);
   }
+
   // Get last run number
   int run=0;
   FILE *frun;
@@ -555,7 +557,6 @@ int main(int argc, char *argv[])
 
   {
 
-
   AcqRun = 1;
 
   sleep(1);
@@ -762,7 +763,6 @@ int main(int argc, char *argv[])
 	    
 	    favg[ch]->cd();
 	    avg100[ch]->cd();
-
 	    g.Set(set.length);
 
 	    mean=0.;
